@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import StatCard from '@/components/StatCard'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,7 @@ interface QualityRecord {
   unit: string
   time: string
   flag: 'valid' | 'invalid' | 'suspect'
+  auditStatus: 'pending' | 'approved' | 'rejected'
 }
 
 interface MarkRecord {
@@ -35,21 +36,6 @@ const flagLabels: Record<string, string> = {
   invalid: '无效',
 }
 
-const qualityRecords: QualityRecord[] = [
-  { id: 'qr1', deviceCode: 'DEV-W-001', enterpriseName: '华泰化工', pollutant: 'COD', value: 89.5, unit: 'mg/L', time: '06-21 06:00', flag: 'suspect' },
-  { id: 'qr2', deviceCode: 'DEV-W-003', enterpriseName: '绿洲纸业', pollutant: 'COD', value: -2.3, unit: 'mg/L', time: '06-21 05:30', flag: 'invalid' },
-  { id: 'qr3', deviceCode: 'DEV-G-002', enterpriseName: '恒通钢铁', pollutant: 'SO₂', value: 5.0, unit: 'mg/m³', time: '06-20 22:00', flag: 'suspect' },
-  { id: 'qr4', deviceCode: 'DEV-W-001', enterpriseName: '华泰化工', pollutant: 'NH₃-N', value: 6.2, unit: 'mg/L', time: '06-21 08:00', flag: 'valid' },
-  { id: 'qr5', deviceCode: 'DEV-W-002', enterpriseName: '鑫源印染', pollutant: 'COD', value: 55.3, unit: 'mg/L', time: '06-21 07:00', flag: 'valid' },
-]
-
-const markRecords: MarkRecord[] = [
-  { id: 'mk1', deviceCode: 'DEV-W-003', markType: '异常', startTime: '2026-06-21 05:00', endTime: '2026-06-21 09:00', auditStatus: 'pending' },
-  { id: 'mk2', deviceCode: 'DEV-W-004', markType: '停运', startTime: '2026-06-21 06:00', endTime: '-', auditStatus: 'pending' },
-  { id: 'mk3', deviceCode: 'DEV-G-002', markType: '缺失', startTime: '2026-06-20 20:00', endTime: '2026-06-20 22:00', auditStatus: 'approved' },
-  { id: 'mk4', deviceCode: 'DEV-W-001', markType: '检修', startTime: '2026-06-19 10:00', endTime: '2026-06-19 12:00', auditStatus: 'approved' },
-]
-
 const auditStatusStyles: Record<string, string> = {
   pending: 'bg-accent-orange-dim text-accent-orange',
   approved: 'bg-accent-green-dim text-accent-green',
@@ -62,63 +48,65 @@ const auditStatusLabels: Record<string, string> = {
   rejected: '已驳回',
 }
 
+const initQualityRecords: QualityRecord[] = [
+  { id: 'qr1', deviceCode: 'DEV-W-001', enterpriseName: '华泰化工', pollutant: 'COD', value: 89.5, unit: 'mg/L', time: '06-21 06:00', flag: 'suspect', auditStatus: 'pending' },
+  { id: 'qr2', deviceCode: 'DEV-W-003', enterpriseName: '绿洲纸业', pollutant: 'COD', value: -2.3, unit: 'mg/L', time: '06-21 05:30', flag: 'invalid', auditStatus: 'pending' },
+  { id: 'qr3', deviceCode: 'DEV-G-002', enterpriseName: '恒通钢铁', pollutant: 'SO₂', value: 5.0, unit: 'mg/m³', time: '06-20 22:00', flag: 'suspect', auditStatus: 'pending' },
+  { id: 'qr4', deviceCode: 'DEV-W-001', enterpriseName: '华泰化工', pollutant: 'NH₃-N', value: 6.2, unit: 'mg/L', time: '06-21 08:00', flag: 'valid', auditStatus: 'approved' },
+  { id: 'qr5', deviceCode: 'DEV-W-002', enterpriseName: '鑫源印染', pollutant: 'COD', value: 55.3, unit: 'mg/L', time: '06-21 07:00', flag: 'valid', auditStatus: 'approved' },
+]
+
+const initMarkRecords: MarkRecord[] = [
+  { id: 'mk1', deviceCode: 'DEV-W-003', markType: '异常', startTime: '2026-06-21 05:00', endTime: '2026-06-21 09:00', auditStatus: 'pending' },
+  { id: 'mk2', deviceCode: 'DEV-W-004', markType: '停运', startTime: '2026-06-21 06:00', endTime: '-', auditStatus: 'pending' },
+  { id: 'mk3', deviceCode: 'DEV-G-002', markType: '缺失', startTime: '2026-06-20 20:00', endTime: '2026-06-20 22:00', auditStatus: 'approved' },
+  { id: 'mk4', deviceCode: 'DEV-W-001', markType: '检修', startTime: '2026-06-19 10:00', endTime: '2026-06-19 12:00', auditStatus: 'approved' },
+]
+
 export default function MaintenanceQuality() {
+  const [qualityRecords, setQualityRecords] = useState<QualityRecord[]>(initQualityRecords)
+  const [markRecords, setMarkRecords] = useState<MarkRecord[]>(initMarkRecords)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  const pendingCount = useMemo(() => qualityRecords.filter(r => r.auditStatus === 'pending').length + markRecords.filter(m => m.auditStatus === 'pending').length, [qualityRecords, markRecords])
+  const approvedCount = useMemo(() => qualityRecords.filter(r => r.auditStatus === 'approved').length + markRecords.filter(m => m.auditStatus === 'approved').length, [qualityRecords, markRecords])
+
+  const handleQualityAudit = (id: string, action: 'approved' | 'rejected') => {
+    setQualityRecords(prev => prev.map(r => r.id === id ? { ...r, auditStatus: action, flag: action === 'approved' ? 'valid' as const : 'invalid' as const } : r))
+    showToast(action === 'approved' ? '质控数据已通过审核' : '质控数据已驳回')
+  }
+
+  const handleMarkAudit = (id: string, action: 'approved' | 'rejected') => {
+    setMarkRecords(prev => prev.map(m => m.id === id ? { ...m, auditStatus: action } : m))
+    showToast(action === 'approved' ? '标记已通过审核' : '标记已驳回')
+  }
+
   const trendOption = useMemo(() => ({
     backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: '#1a2332',
-      borderColor: '#2a3548',
-      textStyle: { color: '#e8edf5', fontSize: 11 },
-    },
-    title: {
-      text: '质控趋势',
-      textStyle: { color: '#e8edf5', fontSize: 13, fontWeight: 500 },
-      left: 0,
-      top: 0,
-    },
+    tooltip: { trigger: 'axis', backgroundColor: '#1a2332', borderColor: '#2a3548', textStyle: { color: '#e8edf5', fontSize: 11 } },
+    title: { text: '质控趋势', textStyle: { color: '#e8edf5', fontSize: 13, fontWeight: 500 }, left: 0, top: 0 },
     grid: { top: 40, right: 16, bottom: 24, left: 48 },
-    xAxis: {
-      type: 'category',
-      data: ['06-15', '06-16', '06-17', '06-18', '06-19', '06-20', '06-21'],
-      axisLine: { lineStyle: { color: '#2a3548' } },
-      axisLabel: { color: '#8896ab', fontSize: 10 },
-      axisTick: { show: false },
-    },
-    yAxis: {
-      type: 'value',
-      min: 90,
-      max: 100,
-      axisLine: { show: false },
-      axisLabel: { color: '#8896ab', fontSize: 10, formatter: '{value}%' },
-      splitLine: { lineStyle: { color: '#2a3548', type: 'dashed' } },
-    },
-    series: [{
-      name: '质控通过率',
-      type: 'line',
-      data: [97.1, 96.8, 95.3, 96.5, 97.2, 95.8, 96.2],
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: { width: 2, color: '#00d4aa' },
-      areaStyle: {
-        color: {
-          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(0,212,170,0.25)' },
-            { offset: 1, color: 'transparent' },
-          ],
-        },
-      },
-    }],
+    xAxis: { type: 'category', data: ['06-15', '06-16', '06-17', '06-18', '06-19', '06-20', '06-21'], axisLine: { lineStyle: { color: '#2a3548' } }, axisLabel: { color: '#8896ab', fontSize: 10 }, axisTick: { show: false } },
+    yAxis: { type: 'value', min: 90, max: 100, axisLine: { show: false }, axisLabel: { color: '#8896ab', fontSize: 10, formatter: '{value}%' }, splitLine: { lineStyle: { color: '#2a3548', type: 'dashed' } } },
+    series: [{ name: '质控通过率', type: 'line', data: [97.1, 96.8, 95.3, 96.5, 97.2, 95.8, 96.2], smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 2, color: '#00d4aa' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(0,212,170,0.25)' }, { offset: 1, color: 'transparent' }] } } }],
   }), [])
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-20 right-6 z-50 px-4 py-2 rounded-md bg-accent-green-dim text-accent-green text-sm font-medium border border-accent-green/30 animate-fade-in-up">
+          {toast}
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="质控通过率" value="96.2" unit="%" color="green" />
-        <StatCard label="待审核" value={3} color="orange" pulse />
-        <StatCard label="已审核" value={15} color="cyan" />
+        <StatCard label="待审核" value={pendingCount} color="orange" pulse />
+        <StatCard label="已审核" value={approvedCount} color="cyan" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -135,19 +123,20 @@ export default function MaintenanceQuality() {
                     <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium', flagStyles[record.flag])}>
                       {flagLabels[record.flag]}
                     </span>
+                    <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium', auditStatusStyles[record.auditStatus])}>
+                      {auditStatusLabels[record.auditStatus]}
+                    </span>
                   </div>
                   <div className="text-xs text-txt-muted">
                     {record.enterpriseName} · {record.pollutant} · <span className="stat-value">{record.value}</span>{record.unit} · {record.time}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 ml-3">
-                  <button className="px-2 py-1 rounded text-[10px] font-medium bg-accent-green-dim text-accent-green hover:opacity-80">
-                    通过
-                  </button>
-                  <button className="px-2 py-1 rounded text-[10px] font-medium bg-accent-red-dim text-accent-red hover:opacity-80">
-                    驳回
-                  </button>
-                </div>
+                {record.auditStatus === 'pending' && (
+                  <div className="flex items-center gap-2 ml-3">
+                    <button onClick={() => handleQualityAudit(record.id, 'approved')} className="px-2 py-1 rounded text-[10px] font-medium bg-accent-green-dim text-accent-green hover:opacity-80">通过</button>
+                    <button onClick={() => handleQualityAudit(record.id, 'rejected')} className="px-2 py-1 rounded text-[10px] font-medium bg-accent-red-dim text-accent-red hover:opacity-80">驳回</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -189,8 +178,8 @@ export default function MaintenanceQuality() {
                   <td className="py-2 px-3 text-center">
                     {mark.auditStatus === 'pending' ? (
                       <div className="flex items-center justify-center gap-2">
-                        <button className="px-2 py-0.5 rounded text-[10px] bg-accent-green-dim text-accent-green">通过</button>
-                        <button className="px-2 py-0.5 rounded text-[10px] bg-accent-red-dim text-accent-red">驳回</button>
+                        <button onClick={() => handleMarkAudit(mark.id, 'approved')} className="px-2 py-0.5 rounded text-[10px] bg-accent-green-dim text-accent-green">通过</button>
+                        <button onClick={() => handleMarkAudit(mark.id, 'rejected')} className="px-2 py-0.5 rounded text-[10px] bg-accent-red-dim text-accent-red">驳回</button>
                       </div>
                     ) : (
                       <span className="text-txt-muted">-</span>

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
 import { cn } from '@/lib/utils'
-import { ClipboardList, CheckCircle, Loader, Percent, Eye, Edit3, Send } from 'lucide-react'
+import { ClipboardList, CheckCircle, Loader, Percent } from 'lucide-react'
 
 type TypeFilter = '全部' | '现场检查' | '整改督办' | '复核销号'
 
@@ -17,9 +18,16 @@ const typeIconMap: Record<string, string> = {
 }
 
 export default function EnforcementList() {
-  const { enforcementTasks } = useStore()
+  const navigate = useNavigate()
+  const { enforcementTasks, startEnforcement, completeEnforcement, createRectifyFromEnforcement } = useStore()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('全部')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [toast, setToast] = useState('')
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
+  }
 
   const totalCount = enforcementTasks.length
   const completedCount = enforcementTasks.filter(t => t.status === 'completed').length
@@ -38,24 +46,38 @@ export default function EnforcementList() {
     return list
   }, [enforcementTasks, typeFilter, statusFilter])
 
-  const getActionButtons = (status: string) => {
-    switch (status) {
+  const getActionButtons = (task: typeof enforcementTasks[0]) => {
+    switch (task.status) {
       case 'assigned':
         return (
           <>
-            <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors">开始执行</button>
+            <button
+              onClick={() => { startEnforcement(task.id); showToast('已开始执行') }}
+              className="px-3 py-1 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
+            >开始执行</button>
             <button className="px-3 py-1 rounded text-[11px] font-medium bg-[var(--bg-secondary)] text-txt-secondary hover:text-text-primary transition-colors">转派</button>
           </>
         )
       case 'in_progress':
         return (
           <>
-            <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors">提交结果</button>
-            <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:bg-accent-orange/20 transition-colors">下达整改</button>
+            <button
+              onClick={() => { completeEnforcement(task.id); showToast('已提交结果') }}
+              className="px-3 py-1 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+            >提交结果</button>
+            <button
+              onClick={() => { const rid = createRectifyFromEnforcement(task.id); showToast(`整改任务已下达，编号${rid}`) }}
+              className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:bg-accent-orange/20 transition-colors"
+            >下达整改</button>
           </>
         )
       case 'completed':
-        return <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors">查看详情</button>
+        return (
+          <button
+            onClick={() => { if (task.type === 'rectify') navigate('/enforcement/rectify') }}
+            className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors"
+          >查看详情</button>
+        )
       default:
         return null
     }
@@ -63,6 +85,12 @@ export default function EnforcementList() {
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-lg bg-accent-green/90 text-white text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="任务总数" value={totalCount} icon={<ClipboardList className="w-4 h-4 text-accent-blue" />} color="blue" />
         <StatCard label="已完成" value={completedCount} icon={<CheckCircle className="w-4 h-4 text-accent-green" />} color="green" />
@@ -121,7 +149,7 @@ export default function EnforcementList() {
                 <p className="mt-2 text-xs text-txt-secondary">{task.description}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {getActionButtons(task.status)}
+                {getActionButtons(task)}
               </div>
             </div>
             {task.status === 'completed' && task.completeTime && (

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import StatusBadge from '@/components/StatusBadge'
 import { cn } from '@/lib/utils'
@@ -12,8 +13,17 @@ interface UploadFile {
 }
 
 export default function EnforcementOnsite() {
-  const { enforcementTasks } = useStore()
-  const task = enforcementTasks.find(t => t.status === 'in_progress') || enforcementTasks[0]
+  const navigate = useNavigate()
+  const { enforcementTasks, completeEnforcement, createRectifyFromEnforcement } = useStore()
+  const taskId = new URLSearchParams(window.location.search).get('task')
+  const task = enforcementTasks.find(t => t.id === taskId) || enforcementTasks.find(t => t.status === 'in_progress') || enforcementTasks[0]
+
+  const [toast, setToast] = useState('')
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
+  }
 
   const [form, setForm] = useState({
     checkTime: new Date().toISOString().slice(0, 16),
@@ -44,8 +54,39 @@ export default function EnforcementOnsite() {
     setFiles(prev => prev.filter(f => f.id !== id))
   }
 
+  const handleSubmitRecord = () => {
+    if (!task) return
+    completeEnforcement(task.id)
+    showToast('笔录已提交')
+    setTimeout(() => navigate('/enforcement'), 800)
+  }
+
+  const handleIssueRectify = () => {
+    if (!task) return
+    createRectifyFromEnforcement(task.id)
+    completeEnforcement(task.id)
+    showToast('整改已下达，任务已完成')
+    setTimeout(() => navigate('/enforcement/rectify'), 800)
+  }
+
+  const handlePenalty = () => {
+    if (!task) return
+    completeEnforcement(task.id)
+    showToast('已立案处罚')
+  }
+
+  const handleSaveDraft = () => {
+    showToast('已保存')
+  }
+
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-lg bg-accent-green/90 text-white text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="glass-card p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 border-l-[3px] border-accent-green pl-3">
@@ -150,16 +191,28 @@ export default function EnforcementOnsite() {
       </div>
 
       <div className="glass-card p-4 flex items-center justify-end gap-3">
-        <button className="px-4 py-2 rounded text-xs font-medium bg-[var(--bg-secondary)] border border-[var(--border)] text-txt-secondary hover:text-text-primary transition-colors flex items-center gap-1.5">
+        <button
+          onClick={handleSaveDraft}
+          className="px-4 py-2 rounded text-xs font-medium bg-[var(--bg-secondary)] border border-[var(--border)] text-txt-secondary hover:text-text-primary transition-colors flex items-center gap-1.5"
+        >
           <Save className="w-3.5 h-3.5" />保存草稿
         </button>
-        <button className="px-4 py-2 rounded text-xs font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors flex items-center gap-1.5">
+        <button
+          onClick={handleSubmitRecord}
+          className="px-4 py-2 rounded text-xs font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors flex items-center gap-1.5"
+        >
           <Send className="w-3.5 h-3.5" />提交笔录
         </button>
-        <button className="px-4 py-2 rounded text-xs font-medium bg-accent-orange-dim text-accent-orange hover:bg-accent-orange/20 transition-colors flex items-center gap-1.5">
+        <button
+          onClick={handleIssueRectify}
+          className="px-4 py-2 rounded text-xs font-medium bg-accent-orange-dim text-accent-orange hover:bg-accent-orange/20 transition-colors flex items-center gap-1.5"
+        >
           <AlertTriangle className="w-3.5 h-3.5" />下达整改
         </button>
-        <button className="px-4 py-2 rounded text-xs font-medium bg-accent-red-dim text-accent-red hover:bg-accent-red/20 transition-colors flex items-center gap-1.5">
+        <button
+          onClick={handlePenalty}
+          className="px-4 py-2 rounded text-xs font-medium bg-accent-red-dim text-accent-red hover:bg-accent-red/20 transition-colors flex items-center gap-1.5"
+        >
           <Gavel className="w-3.5 h-3.5" />立案处罚
         </button>
       </div>

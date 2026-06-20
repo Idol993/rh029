@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import { cn } from '@/lib/utils'
@@ -17,22 +17,23 @@ interface TimelineStep {
   done: boolean
 }
 
-function buildTimeline(event: WarningEvent) {
+function buildTimeline(event: WarningEvent): TimelineStep[] {
   const steps: TimelineStep[] = [
     { label: '触发', time: event.triggerTime, person: '系统自动', done: true },
+    { label: '推送', time: event.triggerTime, person: '系统自动', done: true },
   ]
   if (event.status === 'pending') {
-    steps.push({ label: '推送', time: event.triggerTime.replace(/\d{2}:\d{2}:\d{2}/, (m) => {
-      const [h, mi, s] = m.split(':').map(Number)
-      const nh = h + Math.floor((mi + 5) / 60)
-      return `${String(nh).padStart(2, '0')}:${String((mi + 5) % 60).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    }), person: '系统自动', done: true })
     steps.push({ label: '处置', time: '', person: '', done: false })
     steps.push({ label: '销号', time: '', person: '', done: false })
+  } else if (event.status === 'processing') {
+    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '', done: true })
+    steps.push({ label: '销号', time: '', person: '', done: false })
+  } else if (event.status === 'dispatched') {
+    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '', done: true })
+    steps.push({ label: '销号', time: '', person: '', done: false })
   } else {
-    steps.push({ label: '推送', time: event.triggerTime, person: '系统自动', done: true })
-    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '—', done: event.status !== 'processing' || true })
-    steps.push({ label: '销号', time: event.status === 'resolved' || event.status === 'closed' ? event.triggerTime : '', person: event.handler || '—', done: event.status === 'resolved' || event.status === 'closed' })
+    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '—', done: true })
+    steps.push({ label: '销号', time: event.triggerTime, person: event.handler || '—', done: true })
   }
   return steps
 }
@@ -40,11 +41,20 @@ function buildTimeline(event: WarningEvent) {
 export default function WarningDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { warningEvents, enforcementTasks } = useStore()
+  const { warningEvents, enforcementTasks, processWarning, resolveWarning, closeWarning, createEnforcementFromWarning } = useStore()
 
   const event = warningEvents.find((e) => e.id === id)
 
+  const [handlerName, setHandlerName] = useState('')
+  const [enforcerName, setEnforcerName] = useState('')
+  const [enforcementMsg, setEnforcementMsg] = useState('')
+
   const timeline = useMemo(() => event ? buildTimeline(event) : [], [event])
+
+  const relatedTasks = useMemo(() =>
+    enforcementTasks.filter((t) => t.warningId === event?.id),
+    [enforcementTasks, event]
+  )
 
   const chartOption = useMemo(() => {
     if (!event || event.pollutantName === '-') return null
@@ -90,7 +100,20 @@ export default function WarningDetail() {
     )
   }
 
-  const relatedTask = enforcementTasks.find((t) => t.warningId === event.id)
+  const handleProcess = () => {
+    if (!handlerName.trim()) return
+    processWarning(event.id, handlerName.trim())
+    setHandlerName('')
+  }
+
+  const handleCreateEnforcement = () => {
+    if (!enforcerName.trim()) return
+    const newId = createEnforcementFromWarning(event.id, enforcerName.trim())
+    if (newId) {
+      setEnforcementMsg(`执法派单创建成功，任务编号: ${newId}`)
+      setEnforcerName('')
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -126,6 +149,92 @@ export default function WarningDetail() {
           {event.handler && <div><span className="text-txt-muted text-xs block mb-1">处置人</span><span className="text-text-primary">{event.handler}</span></div>}
         </div>
         <p className="mt-3 text-sm text-txt-secondary">{event.description}</p>
+      </div>
+
+      <div className="glass-card p-5">
+        <h3 className="text-sm font-semibold text-text-primary mb-4 border-l-[3px] border-accent-green pl-3">操作</h3>
+        {event.status === 'pending' && (
+          <div className="flex items-center gap-3">
+            <input
+              value={handlerName}
+              onChange={(e) => setHandlerName(e.target.value)}
+              placeholder="输入处置人姓名"
+              className="bg-[#1a2332] border border-[#2a3548] rounded px-3 py-1.5 text-sm text-text-primary placeholder:text-txt-muted focus:outline-none focus:border-accent-green w-48"
+            />
+            <button
+              onClick={handleProcess}
+              disabled={!handlerName.trim()}
+              className={cn(
+                'px-4 py-1.5 rounded text-sm font-medium transition-all',
+                handlerName.trim()
+                  ? 'bg-accent-red text-white hover:bg-accent-red/80'
+                  : 'bg-[#2a3548] text-txt-muted cursor-not-allowed'
+              )}
+            >
+              开始处置
+            </button>
+          </div>
+        )}
+        {event.status === 'processing' && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              value={enforcerName}
+              onChange={(e) => setEnforcerName(e.target.value)}
+              placeholder="输入执法人员姓名"
+              className="bg-[#1a2332] border border-[#2a3548] rounded px-3 py-1.5 text-sm text-text-primary placeholder:text-txt-muted focus:outline-none focus:border-accent-green w-48"
+            />
+            <button
+              onClick={handleCreateEnforcement}
+              disabled={!enforcerName.trim()}
+              className={cn(
+                'px-4 py-1.5 rounded text-sm font-medium transition-all',
+                enforcerName.trim()
+                  ? 'bg-accent-orange text-white hover:bg-accent-orange/80'
+                  : 'bg-[#2a3548] text-txt-muted cursor-not-allowed'
+              )}
+            >
+              生成执法派单
+            </button>
+            <button
+              onClick={() => resolveWarning(event.id)}
+              className="px-4 py-1.5 rounded text-sm font-medium bg-accent-green text-white hover:bg-accent-green/80 transition-all"
+            >
+              标记解决
+            </button>
+            {enforcementMsg && (
+              <span className="text-xs text-accent-green bg-accent-green-dim px-3 py-1 rounded">{enforcementMsg}</span>
+            )}
+          </div>
+        )}
+        {event.status === 'dispatched' && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => resolveWarning(event.id)}
+              className="px-4 py-1.5 rounded text-sm font-medium bg-accent-green text-white hover:bg-accent-green/80 transition-all"
+            >
+              标记解决
+            </button>
+            <button
+              onClick={() => closeWarning(event.id)}
+              className="px-4 py-1.5 rounded text-sm font-medium bg-[#2a3548] text-txt-secondary hover:bg-[#374357] hover:text-text-primary transition-all"
+            >
+              关闭预警
+            </button>
+          </div>
+        )}
+        {event.status === 'resolved' && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => closeWarning(event.id)}
+              className="px-4 py-1.5 rounded text-sm font-medium bg-[#2a3548] text-txt-secondary hover:bg-[#374357] hover:text-text-primary transition-all"
+            >
+              关闭预警
+            </button>
+          </div>
+        )}
+        {event.status === 'closed' && (
+          <span className="text-sm text-txt-muted bg-[#1a2332] border border-[#2a3548] px-4 py-1.5 rounded">已关闭</span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -166,14 +275,26 @@ export default function WarningDetail() {
       <div className="glass-card p-5">
         <h3 className="text-sm font-semibold text-text-primary mb-4 border-l-[3px] border-accent-green pl-3">证据链</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
-            <FileText className="w-5 h-5 text-accent-blue shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs text-text-primary font-medium truncate">执法任务</p>
-              <p className="text-xs text-txt-muted truncate">{relatedTask ? `${relatedTask.typeName} - ${relatedTask.enforcerName}` : '暂无关联任务'}</p>
+          {relatedTasks.length > 0 ? relatedTasks.map((task) => (
+            <div key={task.id} className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
+              <FileText className="w-5 h-5 text-accent-blue shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-text-primary font-medium truncate">执法任务 {task.id}</p>
+                <p className="text-xs text-txt-muted truncate">{task.typeName} - {task.enforcerName}</p>
+                <p className="text-xs text-txt-muted truncate">{task.status === 'assigned' ? '已指派' : task.status === 'in_progress' ? '进行中' : task.status === 'completed' ? '已完成' : '已关闭'}</p>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 ml-auto" />
             </div>
-            <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 ml-auto" />
-          </div>
+          )) : (
+            <div className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
+              <FileText className="w-5 h-5 text-accent-blue shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-text-primary font-medium truncate">执法任务</p>
+                <p className="text-xs text-txt-muted truncate">暂无关联任务</p>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 ml-auto" />
+            </div>
+          )}
           <div className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
             <Activity className="w-5 h-5 text-accent-orange shrink-0" />
             <div className="min-w-0">

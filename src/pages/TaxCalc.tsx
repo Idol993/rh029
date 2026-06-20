@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
@@ -10,7 +10,40 @@ const axisColor = '#8896ab'
 const splitColor = '#2a3548'
 
 export default function TaxCalc() {
-  const { taxRecords, enterprises } = useStore()
+  const { taxRecords, enterprises, declareTax } = useStore()
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback(() => {
+    const calculatedIds = taxRecords.filter(r => r.status === 'calculated').map(r => r.id)
+    setSelectedIds(prev => {
+      const allSelected = calculatedIds.every(id => prev.has(id))
+      if (allSelected) return new Set<string>()
+      return new Set(calculatedIds)
+    })
+  }, [taxRecords])
+
+  const handleDeclare = useCallback(() => {
+    if (selectedIds.size === 0) return
+    declareTax(Array.from(selectedIds))
+    setToast(`已确认申报${selectedIds.size}条记录`)
+    setSelectedIds(new Set())
+  }, [selectedIds, declareTax])
 
   const totalTax = useMemo(() => taxRecords.reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
   const paidTotal = useMemo(() => taxRecords.filter(r => r.status === 'paid').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
@@ -41,8 +74,16 @@ export default function TaxCalc() {
     }
   }, [taxRecords])
 
+  const calculatedRecords = useMemo(() => taxRecords.filter(r => r.status === 'calculated'), [taxRecords])
+
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg bg-accent-green-dim text-accent-green text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="本月税额合计" value={totalTax.toLocaleString()} unit="元" icon={<Calculator className="w-4 h-4 text-accent-green" />} color="green" />
         <StatCard label="申报企业数" value={declaredCount} icon={<Building2 className="w-4 h-4 text-accent-cyan" />} color="cyan" />
@@ -59,6 +100,16 @@ export default function TaxCalc() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-[var(--border)]">
+                  <th className="text-center py-2 px-3 text-txt-secondary font-medium w-10">
+                    {calculatedRecords.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={calculatedRecords.length > 0 && calculatedRecords.every(r => selectedIds.has(r.id))}
+                        onChange={toggleAll}
+                        className="accent-accent-green"
+                      />
+                    )}
+                  </th>
                   <th className="text-left py-2 px-3 text-txt-secondary font-medium">企业名称</th>
                   <th className="text-left py-2 px-3 text-txt-secondary font-medium">税期</th>
                   <th className="text-left py-2 px-3 text-txt-secondary font-medium">污染物类型</th>
@@ -71,7 +122,20 @@ export default function TaxCalc() {
               </thead>
               <tbody>
                 {taxRecords.map(r => (
-                  <tr key={r.id} className="border-b border-[var(--border)]/50 hover:bg-[var(--bg-card-hover)] transition-colors">
+                  <tr key={r.id} className={cn(
+                    'border-b border-[var(--border)]/50 hover:bg-[var(--bg-card-hover)] transition-colors',
+                    selectedIds.has(r.id) && 'bg-accent-green/5'
+                  )}>
+                    <td className="py-2.5 px-3 text-center">
+                      {r.status === 'calculated' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                          className="accent-accent-green"
+                        />
+                      )}
+                    </td>
                     <td className="py-2.5 px-3 text-text-primary">{r.enterpriseName}</td>
                     <td className="py-2.5 px-3 text-txt-secondary">{r.period}</td>
                     <td className="py-2.5 px-3 text-text-primary">{r.pollutantType}</td>
@@ -85,6 +149,17 @@ export default function TaxCalc() {
               </tbody>
             </table>
           </div>
+          {selectedIds.size > 0 && (
+            <div className="mt-3 flex items-center justify-between px-3 py-2.5 rounded-lg bg-accent-green/5 border border-accent-green/20">
+              <span className="text-xs text-txt-secondary">已选择 <span className="stat-value text-accent-green">{selectedIds.size}</span> 条已核算记录</span>
+              <button
+                onClick={handleDeclare}
+                className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
+              >
+                确认申报 ({selectedIds.size}条)
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="glass-card p-4">

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import { cn } from '@/lib/utils'
 import StatCard from '@/components/StatCard'
@@ -27,7 +28,7 @@ const levelBorder: Record<WarningLevel, string> = {
   yellow: 'border-l-accent-yellow',
 }
 
-function WarningCard({ event }: { event: WarningEvent }) {
+function WarningCard({ event, onClick }: { event: WarningEvent; onClick: () => void }) {
   return (
     <div className={cn('glass-card p-4 border-l-4', levelBorder[event.level])}>
       <div className="flex items-start justify-between gap-3">
@@ -60,6 +61,7 @@ function WarningCard({ event }: { event: WarningEvent }) {
         <div className="flex flex-col items-end gap-2 shrink-0">
           <StatusBadge variant={event.status} />
           <button
+            onClick={onClick}
             className={cn(
               'px-3 py-1 rounded text-xs font-medium transition-all',
               event.status === 'pending'
@@ -76,6 +78,7 @@ function WarningCard({ event }: { event: WarningEvent }) {
 }
 
 export default function WarningList() {
+  const navigate = useNavigate()
   const { warningEvents, stats } = useStore()
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -133,7 +136,7 @@ export default function WarningList() {
           </div>
         )}
         {filtered.map((event) => (
-          <WarningCard key={event.id} event={event} />
+          <WarningCard key={event.id} event={event} onClick={() => navigate(`/warning/${event.id}`)} />
         ))}
       </div>
     </div>

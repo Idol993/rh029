@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
@@ -42,7 +42,21 @@ const alerts = [
 ]
 
 export default function QualityFraud() {
-  const { fraudClues } = useStore()
+  const { fraudClues, dispatchFraudClue } = useStore()
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const handleDispatch = useCallback((id: string) => {
+    const taskId = dispatchFraudClue(id)
+    if (taskId) {
+      setToast(`派单成功，执法任务编号: ${taskId}`)
+    }
+  }, [dispatchFraudClue])
 
   const stats = useMemo(() => ({
     detected: fraudClues.filter(c => c.status === 'detected').length,
@@ -92,6 +106,12 @@ export default function QualityFraud() {
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg bg-accent-green-dim text-accent-green text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="疑似线索" value={stats.detected + stats.dispatched + stats.verified} color="red" pulse />
         <StatCard label="已派单" value={stats.dispatched} color="orange" />
@@ -137,7 +157,10 @@ export default function QualityFraud() {
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-txt-muted">检测时间: {clue.detectTime}</span>
                 {clue.status === 'detected' ? (
-                  <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:opacity-80 transition-opacity">
+                  <button
+                    onClick={() => handleDispatch(clue.id)}
+                    className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:opacity-80 transition-opacity"
+                  >
                     派单核查
                   </button>
                 ) : (

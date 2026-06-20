@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import ReactECharts from 'echarts-for-react'
@@ -8,85 +8,35 @@ import { ClipboardCheck, Wrench, CheckCircle2, Percent, Upload, CheckCircle, XCi
 const axisColor = '#8896ab'
 const splitColor = '#2a3548'
 
-interface RectItem {
-  id: string
-  enterpriseName: string
-  violation: string
-  requirement: string
-  deadline: string
-  currentStep: number
-  steps: { label: string; done: boolean }[]
-}
-
-const mockRectItems: RectItem[] = [
-  {
-    id: 'r1', enterpriseName: '华泰化工有限公司',
-    violation: 'COD排放浓度持续超标，小时均值达98.5mg/L，超限值23.1%',
-    requirement: '立即排查超标原因，加强治污设施运维，确保达标排放',
-    deadline: '2026-07-05', currentStep: 1,
-    steps: [
-      { label: '下达整改', done: true },
-      { label: '企业反馈', done: false },
-      { label: '执法复核', done: false },
-      { label: '销号确认', done: false },
-    ],
-  },
-  {
-    id: 'r2', enterpriseName: '绿洲纸业有限公司',
-    violation: 'COD日均值112.3mg/L，超标24.8%；治污设施加药泵停运',
-    requirement: '修复加药泵，恢复治污设施正常运行，提交整改报告',
-    deadline: '2026-07-01', currentStep: 2,
-    steps: [
-      { label: '下达整改', done: true },
-      { label: '企业反馈', done: true },
-      { label: '执法复核', done: false },
-      { label: '销号确认', done: false },
-    ],
-  },
-  {
-    id: 'r3', enterpriseName: '永利建材有限公司',
-    violation: '烟尘浓度超标，小时均值28.5mg/m³，超限值42.5%',
-    requirement: '检查除尘设施运行状态，清理滤袋，确保排放达标',
-    deadline: '2026-06-28', currentStep: 0,
-    steps: [
-      { label: '下达整改', done: false },
-      { label: '企业反馈', done: false },
-      { label: '执法复核', done: false },
-      { label: '销号确认', done: false },
-    ],
-  },
-  {
-    id: 'r4', enterpriseName: '恒通钢铁厂',
-    violation: 'SO₂数据疑似造假，长时间恒定在5mg/m³',
-    requirement: '提交数据采集系统检测报告，配合执法检查',
-    deadline: '2026-06-25', currentStep: 3,
-    steps: [
-      { label: '下达整改', done: true },
-      { label: '企业反馈', done: true },
-      { label: '执法复核', done: true },
-      { label: '销号确认', done: false },
-    ],
-  },
-  {
-    id: 'r5', enterpriseName: '鑫源印染集团',
-    violation: '治污设施停运，加药泵停机2小时',
-    requirement: '完善设施运维管理，建立故障应急响应机制',
-    deadline: '2026-06-30', currentStep: 4,
-    steps: [
-      { label: '下达整改', done: true },
-      { label: '企业反馈', done: true },
-      { label: '执法复核', done: true },
-      { label: '销号确认', done: true },
-    ],
-  },
-]
-
-const completedItems = mockRectItems.filter(r => r.currentStep === 4)
-const inProgressItems = mockRectItems.filter(r => r.currentStep > 0 && r.currentStep < 4)
-const pendingItems = mockRectItems.filter(r => r.currentStep === 0)
-const closeRate = mockRectItems.length > 0 ? ((completedItems.length / mockRectItems.length) * 100).toFixed(1) : '0'
+const stepLabels = ['下达整改', '企业反馈', '执法复核', '销号确认']
 
 export default function EnforcementRectify() {
+  const { enforcementTasks, warningEvents, startEnforcement, completeEnforcement } = useStore()
+  const [stepOverrides, setStepOverrides] = useState<Record<string, number>>({})
+  const [toast, setToast] = useState('')
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 2500)
+  }
+
+  const rectifyTasks = useMemo(() => enforcementTasks.filter(t => t.type === 'rectify'), [enforcementTasks])
+
+  const getCurrentStep = (task: typeof rectifyTasks[0]): number => {
+    if (task.status === 'assigned') return 0
+    if (task.status === 'closed') return 4
+    if (task.status === 'completed') return 3
+    return stepOverrides[task.id] ?? 1
+  }
+
+  const getWarningContext = (warningId: string) => warningEvents.find(w => w.id === warningId)
+
+  const pendingCount = rectifyTasks.filter(t => t.status === 'assigned').length
+  const inProgressCount = rectifyTasks.filter(t => t.status === 'in_progress').length
+  const closedCount = rectifyTasks.filter(t => t.status === 'closed').length
+  const completedCount = rectifyTasks.filter(t => t.status === 'completed').length
+  const closeRate = rectifyTasks.length > 0 ? (((closedCount + completedCount) / rectifyTasks.length) * 100).toFixed(1) : '0'
+
   const chartOption = useMemo(() => ({
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', backgroundColor: '#1a2332', borderColor: '#2a3548', textStyle: { color: '#e8edf5' } },
@@ -106,75 +56,145 @@ export default function EnforcementRectify() {
     return 'bg-[var(--bg-secondary)] border-[var(--border)] text-txt-muted'
   }
 
+  const handleStartRectify = (taskId: string) => {
+    startEnforcement(taskId)
+    showToast('已开始整改')
+  }
+
+  const handleSubmitReview = (taskId: string) => {
+    setStepOverrides(prev => ({ ...prev, [taskId]: 2 }))
+    showToast('已提交复核')
+  }
+
+  const handleApproveReview = (taskId: string) => {
+    completeEnforcement(taskId)
+    showToast('复核已通过')
+  }
+
+  const handleRejectRectify = (taskId: string) => {
+    setStepOverrides(prev => ({ ...prev, [taskId]: 1 }))
+    showToast('整改已驳回，请重新整改')
+  }
+
+  const handleCloseConfirm = (taskId: string) => {
+    showToast('已销号确认')
+  }
+
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-lg bg-accent-green/90 text-white text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="待整改" value={pendingItems.length} icon={<ClipboardCheck className="w-4 h-4 text-accent-orange" />} color="orange" pulse />
-        <StatCard label="整改中" value={inProgressItems.length} icon={<Wrench className="w-4 h-4 text-accent-blue" />} color="blue" />
-        <StatCard label="已完成" value={completedItems.length} icon={<CheckCircle2 className="w-4 h-4 text-accent-green" />} color="green" />
+        <StatCard label="待整改" value={pendingCount} icon={<ClipboardCheck className="w-4 h-4 text-accent-orange" />} color="orange" pulse />
+        <StatCard label="整改中" value={inProgressCount} icon={<Wrench className="w-4 h-4 text-accent-blue" />} color="blue" />
+        <StatCard label="已完成" value={completedCount + closedCount} icon={<CheckCircle2 className="w-4 h-4 text-accent-green" />} color="green" />
         <StatCard label="销号率" value={closeRate} unit="%" icon={<Percent className="w-4 h-4 text-accent-cyan" />} color="cyan" />
       </div>
 
       <div className="space-y-4">
-        {mockRectItems.map(item => (
-          <div key={item.id} className="glass-card p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-text-primary mb-1">{item.enterpriseName}</h3>
-                <p className="text-xs text-accent-red">{item.violation}</p>
+        {rectifyTasks.map(task => {
+          const currentStep = getCurrentStep(task)
+          const warning = getWarningContext(task.warningId)
+          const steps = stepLabels.map((label, i) => ({
+            label,
+            done: i < currentStep || task.status === 'closed',
+          }))
+
+          return (
+            <div key={task.id} className="glass-card p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">{task.enterpriseName}</h3>
+                  <p className="text-xs text-accent-red">
+                    {warning ? `${warning.typeName}：${warning.description}` : task.description}
+                  </p>
+                </div>
+                <span className={cn('text-[11px] px-2 py-0.5 rounded font-medium shrink-0', currentStep === 0 ? 'bg-accent-orange-dim text-accent-orange' : task.status === 'closed' ? 'bg-zinc-700/50 text-zinc-400' : currentStep >= 3 ? 'bg-accent-green-dim text-accent-green' : 'bg-accent-blue-dim text-accent-blue')}>
+                  {currentStep === 0 ? '待整改' : task.status === 'closed' ? '已销号' : currentStep >= 3 ? '已完成' : '整改中'}
+                </span>
               </div>
-              <span className={cn('text-[11px] px-2 py-0.5 rounded font-medium shrink-0', item.currentStep === 0 ? 'bg-accent-orange-dim text-accent-orange' : item.currentStep === 4 ? 'bg-accent-green-dim text-accent-green' : 'bg-accent-blue-dim text-accent-blue')}>
-                {item.currentStep === 0 ? '待整改' : item.currentStep === 4 ? '已销号' : '整改中'}
-              </span>
-            </div>
 
-            <div className="text-xs text-txt-secondary mb-4">
-              <span className="text-txt-muted">整改要求：</span>{item.requirement}
-              <span className="ml-4 text-txt-muted">截止日期：</span>
-              <span className={cn(new Date(item.deadline) < new Date() && item.currentStep < 4 ? 'text-accent-red font-medium' : 'text-text-primary')}>
-                {item.deadline}
-              </span>
-            </div>
+              <div className="text-xs text-txt-secondary mb-4">
+                <span className="text-txt-muted">整改要求：</span>{task.description}
+                <span className="ml-4 text-txt-muted">派单时间：</span>
+                <span className="text-text-primary">{task.assignTime}</span>
+              </div>
 
-            <div className="flex items-center gap-0 mb-4">
-              {item.steps.map((step, i) => (
-                <div key={i} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center flex-1">
-                    <div className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-medium transition-all', getStepStyle(step.done, i === item.currentStep))}>
-                      {step.done ? '✓' : i + 1}
+              <div className="flex items-center gap-0 mb-4">
+                {steps.map((step, i) => (
+                  <div key={i} className="flex items-center flex-1">
+                    <div className="flex flex-col items-center flex-1">
+                      <div className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-medium transition-all', getStepStyle(step.done, i === currentStep))}>
+                        {step.done ? '✓' : i + 1}
+                      </div>
+                      <span className={cn('text-[10px] mt-1 whitespace-nowrap', step.done ? 'text-accent-green' : i === currentStep ? 'text-accent-blue' : 'text-txt-muted')}>
+                        {step.label}
+                      </span>
                     </div>
-                    <span className={cn('text-[10px] mt-1 whitespace-nowrap', step.done ? 'text-accent-green' : i === item.currentStep ? 'text-accent-blue' : 'text-txt-muted')}>
-                      {step.label}
-                    </span>
+                    {i < steps.length - 1 && (
+                      <div className={cn('h-0.5 flex-1 -mt-4', step.done ? 'bg-accent-green' : 'bg-[var(--border)]')} />
+                    )}
                   </div>
-                  {i < item.steps.length - 1 && (
-                    <div className={cn('h-0.5 flex-1 -mt-4', step.done ? 'bg-accent-green' : 'bg-[var(--border)]')} />
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {item.currentStep > 0 && item.currentStep < 4 && (
-              <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/50">
-                <div className="flex items-center gap-2">
-                  <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1">
-                    <Upload className="w-3 h-3" />上传整改材料
-                  </button>
-                </div>
-                {item.currentStep === 2 && (
-                  <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" />通过复核
-                    </button>
-                    <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red-dim text-accent-red hover:bg-accent-red/20 transition-colors flex items-center gap-1">
-                      <XCircle className="w-3 h-3" />驳回整改
-                    </button>
-                  </div>
-                )}
+                ))}
               </div>
-            )}
-          </div>
-        ))}
+
+              {task.status !== 'closed' && (
+                <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/50">
+                  <div className="flex items-center gap-2">
+                    {currentStep === 0 && (
+                      <button
+                        onClick={() => handleStartRectify(task.id)}
+                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
+                      >开始整改</button>
+                    )}
+                    {currentStep >= 1 && currentStep < 3 && (
+                      <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1">
+                        <Upload className="w-3 h-3" />上传整改材料
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {currentStep === 1 && (
+                      <button
+                        onClick={() => handleSubmitReview(task.id)}
+                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+                      >提交复核</button>
+                    )}
+                    {currentStep === 2 && (
+                      <>
+                        <button
+                          onClick={() => handleApproveReview(task.id)}
+                          className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors flex items-center gap-1"
+                        >
+                          <CheckCircle className="w-3 h-3" />通过复核
+                        </button>
+                        <button
+                          onClick={() => handleRejectRectify(task.id)}
+                          className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red-dim text-accent-red hover:bg-accent-red/20 transition-colors flex items-center gap-1"
+                        >
+                          <XCircle className="w-3 h-3" />驳回整改
+                        </button>
+                      </>
+                    )}
+                    {currentStep === 3 && (
+                      <button
+                        onClick={() => handleCloseConfirm(task.id)}
+                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+                      >销号确认</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {rectifyTasks.length === 0 && (
+          <div className="glass-card p-8 text-center text-txt-muted text-sm">暂无整改任务</div>
+        )}
       </div>
 
       <div className="glass-card p-4">

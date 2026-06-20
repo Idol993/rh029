@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
@@ -39,10 +39,39 @@ const statusBadgeVariant: Record<string, 'pending' | 'in_progress' | 'completed'
   reviewed: 'reviewed',
 }
 
+const statusLabels: Record<string, string> = {
+  pending: '待处置',
+  in_progress: '进行中',
+  completed: '已完成',
+  reviewed: '已审核',
+}
+
 export default function MaintenanceOrders() {
-  const { maintenanceOrders } = useStore()
+  const { maintenanceOrders, startMaintenanceOrder, completeMaintenanceOrder, reviewMaintenanceOrder } = useStore()
   const [typeTab, setTypeTab] = useState<TypeTab>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const handleStart = useCallback((id: string) => {
+    startMaintenanceOrder(id)
+    setToast('工单已开始处理')
+  }, [startMaintenanceOrder])
+
+  const handleComplete = useCallback((id: string) => {
+    completeMaintenanceOrder(id)
+    setToast('工单已完成')
+  }, [completeMaintenanceOrder])
+
+  const handleReview = useCallback((id: string) => {
+    reviewMaintenanceOrder(id)
+    setToast('工单已审核通过')
+  }, [reviewMaintenanceOrder])
 
   const stats = useMemo(() => ({
     pending: maintenanceOrders.filter(o => o.status === 'pending').length,
@@ -90,6 +119,12 @@ export default function MaintenanceOrders() {
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg bg-accent-green-dim text-accent-green text-sm font-medium shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="待处理" value={stats.pending} color="orange" pulse />
         <StatCard label="进行中" value={stats.inProgress} color="blue" />
@@ -148,17 +183,26 @@ export default function MaintenanceOrders() {
                 </div>
                 <div className="flex items-center gap-2">
                   {order.status === 'pending' && (
-                    <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:opacity-80 transition-opacity">
+                    <button
+                      onClick={() => handleStart(order.id)}
+                      className="px-3 py-1 rounded text-[11px] font-medium bg-accent-orange-dim text-accent-orange hover:opacity-80 transition-opacity"
+                    >
                       处理
                     </button>
                   )}
                   {order.status === 'in_progress' && (
-                    <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:opacity-80 transition-opacity">
+                    <button
+                      onClick={() => handleComplete(order.id)}
+                      className="px-3 py-1 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:opacity-80 transition-opacity"
+                    >
                       完成
                     </button>
                   )}
                   {order.status === 'completed' && (
-                    <button className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:opacity-80 transition-opacity">
+                    <button
+                      onClick={() => handleReview(order.id)}
+                      className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:opacity-80 transition-opacity"
+                    >
                       审核
                     </button>
                   )}

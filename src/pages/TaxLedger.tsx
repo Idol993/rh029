@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useStore } from '@/store'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
@@ -51,8 +51,25 @@ const mockLedger: EnterpriseLedger[] = [
 ]
 
 export default function TaxLedger() {
-  const { taxRecords } = useStore()
+  const { taxRecords, declareTax } = useStore()
   const [period, setPeriod] = useState<PeriodTab>('月度')
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const handleGenerate = useCallback(() => {
+    const calculatedIds = taxRecords.filter(r => r.status === 'calculated').map(r => r.id)
+    if (calculatedIds.length === 0) {
+      setToast('暂无待申报记录')
+      return
+    }
+    declareTax(calculatedIds)
+    setToast(`已确认申报${calculatedIds.length}条记录`)
+  }, [taxRecords, declareTax])
 
   const trendOption = useMemo(() => {
     const months = ['1月', '2月', '3月', '4月', '5月', '6月']
@@ -73,11 +90,22 @@ export default function TaxLedger() {
 
   const declaredTotal = useMemo(() => taxRecords.filter(r => r.status === 'declared' || r.status === 'paid').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
   const calculatedTotal = useMemo(() => taxRecords.filter(r => r.status === 'calculated').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
+  const enterpriseCount = useMemo(() => new Set(taxRecords.map(r => r.enterpriseName)).size, [taxRecords])
+  const calculatedCount = useMemo(() => taxRecords.filter(r => r.status === 'calculated').length, [taxRecords])
 
   const tabs: PeriodTab[] = ['月度', '季度', '年度']
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className={cn(
+          'fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg text-sm font-medium shadow-lg animate-fade-in',
+          calculatedCount > 0 || toast.includes('暂无') ? 'bg-accent-orange-dim text-accent-orange' : 'bg-accent-green-dim text-accent-green'
+        )}>
+          {toast}
+        </div>
+      )}
+
       <div className="flex items-center gap-1 p-1 rounded-md bg-[var(--bg-card)] w-fit">
         {tabs.map(t => (
           <button key={t} onClick={() => setPeriod(t)} className={cn('px-4 py-1.5 rounded text-xs font-medium transition-colors', period === t ? 'bg-accent-green-dim text-accent-green' : 'text-txt-secondary hover:text-text-primary')}>
@@ -153,16 +181,27 @@ export default function TaxLedger() {
               </div>
               <div className="flex justify-between py-1.5 border-b border-[var(--border)]/50">
                 <span className="text-txt-secondary">申报企业数</span>
-                <span className="stat-value text-text-primary">5家</span>
+                <span className="stat-value text-text-primary">{enterpriseCount}家</span>
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-txt-secondary">申报期间</span>
                 <span className="text-text-primary">2026年5月</span>
               </div>
             </div>
-            <button className="w-full mt-3 py-2 rounded text-xs font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors">
+            <button
+              onClick={handleGenerate}
+              className="w-full mt-3 py-2 rounded text-xs font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+            >
               生成申报表
             </button>
+            {calculatedCount > 0 && (
+              <button
+                onClick={handleGenerate}
+                className="w-full mt-2 py-2 rounded text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
+              >
+                确认申报 ({calculatedCount}条)
+              </button>
+            )}
           </div>
         </div>
       </div>
