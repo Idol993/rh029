@@ -1,0 +1,171 @@
+import { useMemo, useState } from 'react'
+import { useStore } from '@/store'
+import ReactECharts from 'echarts-for-react'
+import { cn } from '@/lib/utils'
+
+const axisColor = '#8896ab'
+const splitColor = '#2a3548'
+
+type PeriodTab = '月度' | '季度' | '年度'
+
+interface LedgerRow {
+  pollutant: string
+  monthEmission: number
+  dailyAvg: number
+  permitLimit: number
+  complianceRate: number
+  exceedCount: number
+}
+
+interface EnterpriseLedger {
+  name: string
+  rows: LedgerRow[]
+}
+
+const mockLedger: EnterpriseLedger[] = [
+  {
+    name: '华泰化工有限公司',
+    rows: [
+      { pollutant: 'COD', monthEmission: 2450, dailyAvg: 81.7, permitLimit: 80, complianceRate: 93.5, exceedCount: 2 },
+      { pollutant: 'NH₃N', monthEmission: 320, dailyAvg: 10.7, permitLimit: 8, complianceRate: 86.7, exceedCount: 4 },
+      { pollutant: 'SO₂', monthEmission: 1800, dailyAvg: 60.0, permitLimit: 50, complianceRate: 90.0, exceedCount: 3 },
+      { pollutant: 'VOCs', monthEmission: 480, dailyAvg: 16.0, permitLimit: 20, complianceRate: 96.7, exceedCount: 1 },
+    ],
+  },
+  {
+    name: '鑫源印染集团',
+    rows: [
+      { pollutant: 'COD', monthEmission: 3200, dailyAvg: 106.7, permitLimit: 100, complianceRate: 90.0, exceedCount: 3 },
+      { pollutant: 'NH₃N', monthEmission: 450, dailyAvg: 15.0, permitLimit: 10, complianceRate: 83.3, exceedCount: 5 },
+      { pollutant: 'TP', monthEmission: 42, dailyAvg: 1.4, permitLimit: 1.5, complianceRate: 96.7, exceedCount: 1 },
+    ],
+  },
+  {
+    name: '恒通钢铁厂',
+    rows: [
+      { pollutant: 'SO₂', monthEmission: 8500, dailyAvg: 283.3, permitLimit: 100, complianceRate: 76.7, exceedCount: 7 },
+      { pollutant: 'NOx', monthEmission: 12000, dailyAvg: 400.0, permitLimit: 150, complianceRate: 70.0, exceedCount: 9 },
+      { pollutant: '烟尘', monthEmission: 680, dailyAvg: 22.7, permitLimit: 30, complianceRate: 93.3, exceedCount: 2 },
+    ],
+  },
+]
+
+export default function TaxLedger() {
+  const { taxRecords } = useStore()
+  const [period, setPeriod] = useState<PeriodTab>('月度')
+
+  const trendOption = useMemo(() => {
+    const months = ['1月', '2月', '3月', '4月', '5月', '6月']
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis', backgroundColor: '#1a2332', borderColor: '#2a3548', textStyle: { color: '#e8edf5' } },
+      legend: { data: ['COD', 'SO₂', 'NOx'], textStyle: { color: axisColor, fontSize: 10 }, top: 0, right: 0, itemWidth: 14, itemHeight: 3 },
+      grid: { top: 36, right: 16, bottom: 24, left: 48 },
+      xAxis: { type: 'category', data: months, axisLine: { lineStyle: { color: splitColor } }, axisLabel: { color: axisColor, fontSize: 10 }, axisTick: { show: false } },
+      yAxis: { type: 'value', axisLine: { show: false }, axisLabel: { color: axisColor, fontSize: 10 }, splitLine: { lineStyle: { color: splitColor, type: 'dashed' } } },
+      series: [
+        { name: 'COD', type: 'line', data: [11200, 12800, 11500, 13200, 12450, 11800], smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color: '#00d4aa' }, itemStyle: { color: '#00d4aa' } },
+        { name: 'SO₂', type: 'line', data: [7800, 8200, 7500, 9100, 8560, 7900], smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color: '#fbbf24' }, itemStyle: { color: '#fbbf24' } },
+        { name: 'NOx', type: 'line', data: [10500, 11200, 9800, 13000, 12300, 10800], smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color: '#3b82f6' }, itemStyle: { color: '#3b82f6' } },
+      ],
+    }
+  }, [])
+
+  const declaredTotal = useMemo(() => taxRecords.filter(r => r.status === 'declared' || r.status === 'paid').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
+  const calculatedTotal = useMemo(() => taxRecords.filter(r => r.status === 'calculated').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
+
+  const tabs: PeriodTab[] = ['月度', '季度', '年度']
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-1 p-1 rounded-md bg-[var(--bg-card)] w-fit">
+        {tabs.map(t => (
+          <button key={t} onClick={() => setPeriod(t)} className={cn('px-4 py-1.5 rounded text-xs font-medium transition-colors', period === t ? 'bg-accent-green-dim text-accent-green' : 'text-txt-secondary hover:text-text-primary')}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
+          {mockLedger.map(enterprise => (
+            <div key={enterprise.name} className="glass-card p-4">
+              <div className="flex items-center gap-2 mb-3 border-l-[3px] border-accent-green pl-3">
+                <span className="text-sm font-semibold text-text-primary">{enterprise.name}</span>
+                <span className="text-[10px] text-txt-muted px-2 py-0.5 rounded bg-[var(--bg-secondary)]">{period}台账</span>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="text-left py-2 px-2 text-txt-secondary font-medium">污染物</th>
+                    <th className="text-right py-2 px-2 text-txt-secondary font-medium">月排放量</th>
+                    <th className="text-right py-2 px-2 text-txt-secondary font-medium">日均排放量</th>
+                    <th className="text-right py-2 px-2 text-txt-secondary font-medium">许可限值</th>
+                    <th className="text-right py-2 px-2 text-txt-secondary font-medium">达标率</th>
+                    <th className="text-center py-2 px-2 text-txt-secondary font-medium">超标次数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enterprise.rows.map(row => (
+                    <tr key={row.pollutant} className="border-b border-[var(--border)]/50 hover:bg-[var(--bg-card-hover)] transition-colors">
+                      <td className="py-2 px-2 text-text-primary font-medium">{row.pollutant}</td>
+                      <td className="py-2 px-2 text-right stat-value text-text-primary">{row.monthEmission.toLocaleString()}</td>
+                      <td className="py-2 px-2 text-right text-txt-secondary">{row.dailyAvg}</td>
+                      <td className="py-2 px-2 text-right text-txt-secondary">{row.permitLimit}</td>
+                      <td className={cn('py-2 px-2 text-right stat-value', row.complianceRate >= 90 ? 'text-accent-green' : row.complianceRate >= 80 ? 'text-accent-yellow' : 'text-accent-red')}>
+                        {row.complianceRate}%
+                      </td>
+                      <td className="py-2 px-2 text-center">
+                        {row.exceedCount > 0 ? (
+                          <span className="text-accent-red stat-value">{row.exceedCount}</span>
+                        ) : (
+                          <span className="text-txt-muted">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-4">
+          <div className="glass-card p-4">
+            <div className="flex items-center gap-2 mb-4 border-l-[3px] border-accent-cyan pl-3">
+              <span className="text-sm font-semibold text-text-primary">月度排放趋势</span>
+            </div>
+            <ReactECharts option={trendOption} style={{ height: 260 }} />
+          </div>
+
+          <div className="glass-card p-4">
+            <div className="flex items-center gap-2 mb-3 border-l-[3px] border-accent-blue pl-3">
+              <span className="text-sm font-semibold text-text-primary">申报表预览</span>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1.5 border-b border-[var(--border)]/50">
+                <span className="text-txt-secondary">申报税额合计</span>
+                <span className="stat-value text-accent-green">{declaredTotal.toLocaleString()}元</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[var(--border)]/50">
+                <span className="text-txt-secondary">待核算税额</span>
+                <span className="stat-value text-accent-orange">{calculatedTotal.toLocaleString()}元</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-[var(--border)]/50">
+                <span className="text-txt-secondary">申报企业数</span>
+                <span className="stat-value text-text-primary">5家</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-txt-secondary">申报期间</span>
+                <span className="text-text-primary">2026年5月</span>
+              </div>
+            </div>
+            <button className="w-full mt-3 py-2 rounded text-xs font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors">
+              生成申报表
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
