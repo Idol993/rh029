@@ -95,6 +95,7 @@ export interface EnforcementTask {
   description: string
   evidenceFiles: EvidenceFile[]
   rectifyStep: number
+  rectifyStepTimes: string[]
 }
 
 export interface TaxRecord {

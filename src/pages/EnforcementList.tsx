@@ -81,15 +81,16 @@ export default function EnforcementList() {
       case 'completed':
         return (
           <button
-            onClick={() => {
-              if (task.type === 'rectify') navigate('/enforcement/rectify')
-            }}
+            onClick={() => navigate(`/enforcement/detail?task=${task.id}`)}
             className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors"
           >查看详情</button>
         )
       case 'closed':
         return (
-          <span className="text-[11px] text-txt-muted">已销号</span>
+          <button
+            onClick={() => navigate(`/enforcement/detail?task=${task.id}`)}
+            className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors"
+          >查看详情</button>
         )
       default:
         return null

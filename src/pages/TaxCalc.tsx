@@ -264,15 +264,9 @@ export default function TaxCalc() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleGeneratePreview}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1"
+                  className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors flex items-center gap-1"
                 >
                   <Eye className="w-3.5 h-3.5" />生成申报表
-                </button>
-                <button
-                  onClick={handleGeneratePreview}
-                  className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
-                >
-                  确认申报 ({selectedIds.size}条)
                 </button>
               </div>
             </div>

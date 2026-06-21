@@ -13,6 +13,7 @@ import TaxLedger from '@/pages/TaxLedger'
 import EnforcementList from '@/pages/EnforcementList'
 import EnforcementOnsite from '@/pages/EnforcementOnsite'
 import EnforcementRectify from '@/pages/EnforcementRectify'
+import EnforcementDetail from '@/pages/EnforcementDetail'
 import MaintenanceDevices from '@/pages/MaintenanceDevices'
 import MaintenanceOrders from '@/pages/MaintenanceOrders'
 import MaintenanceQuality from '@/pages/MaintenanceQuality'
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="tax/ledger" element={<TaxLedger />} />
           <Route path="enforcement" element={<EnforcementList />} />
           <Route path="enforcement/onsite" element={<EnforcementOnsite />} />
+          <Route path="enforcement/detail" element={<EnforcementDetail />} />
           <Route path="enforcement/rectify" element={<EnforcementRectify />} />
           <Route path="maintenance" element={<MaintenanceDevices />} />
           <Route path="maintenance/orders" element={<MaintenanceOrders />} />

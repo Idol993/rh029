@@ -317,7 +317,7 @@ export default function WarningDetail() {
                   </div>
                 )}
               </div>
-              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 mt-0.5 cursor-pointer hover:text-accent-cyan" onClick={() => navigate(`/enforcement/onsite?task=${task.id}`)} />
+              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 mt-0.5 cursor-pointer hover:text-accent-cyan" onClick={() => navigate(`/enforcement/detail?task=${task.id}`)} />
             </div>
           )) : (
             <div className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">

@@ -130,21 +130,25 @@ export default function EnforcementRectify() {
               </div>
 
               <div className="flex items-center gap-0 mb-4">
-                {steps.map((step, i) => (
-                  <div key={i} className="flex items-center flex-1">
-                    <div className="flex flex-col items-center flex-1">
-                      <div className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-medium transition-all', getStepStyle(step.done, i === currentStep))}>
-                        {step.done ? '✓' : i + 1}
+                {steps.map((step, i) => {
+                  const stepTime = task.rectifyStepTimes?.[i] || ''
+                  return (
+                    <div key={i} className="flex items-center flex-1">
+                      <div className="flex flex-col items-center flex-1">
+                        <div className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-medium transition-all', getStepStyle(step.done, i === currentStep))}>
+                          {step.done ? '✓' : i + 1}
+                        </div>
+                        <span className={cn('text-[10px] mt-1 whitespace-nowrap', step.done ? 'text-accent-green' : i === currentStep ? 'text-accent-blue' : 'text-txt-muted')}>
+                          {step.label}
+                        </span>
+                        {stepTime && <span className="text-[9px] text-txt-muted">{stepTime}</span>}
                       </div>
-                      <span className={cn('text-[10px] mt-1 whitespace-nowrap', step.done ? 'text-accent-green' : i === currentStep ? 'text-accent-blue' : 'text-txt-muted')}>
-                        {step.label}
-                      </span>
+                      {i < steps.length - 1 && (
+                        <div className={cn('h-0.5 flex-1 -mt-4', step.done ? 'bg-accent-green' : 'bg-[var(--border)]')} />
+                      )}
                     </div>
-                    {i < steps.length - 1 && (
-                      <div className={cn('h-0.5 flex-1 -mt-4', step.done ? 'bg-accent-green' : 'bg-[var(--border)]')} />
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {task.evidenceFiles.length > 0 && (
