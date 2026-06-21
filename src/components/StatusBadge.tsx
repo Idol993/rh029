@@ -42,12 +42,14 @@ interface StatusBadgeProps {
   label?: string
   pulse?: boolean
   className?: string
+  size?: 'sm' | 'md'
 }
 
-export default function StatusBadge({ variant, label, pulse, className }: StatusBadgeProps) {
+export default function StatusBadge({ variant, label, pulse, className, size = 'md' }: StatusBadgeProps) {
   return (
     <span className={cn(
-      'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap',
+      'inline-flex items-center gap-1 px-2 rounded font-medium whitespace-nowrap',
+      size === 'sm' ? 'py-0.5 text-[10px] px-1.5' : 'py-0.5 text-[11px]',
       variantStyles[variant],
       pulse && variant === 'red' && 'animate-pulse-red',
       pulse && variant === 'orange' && 'animate-pulse-orange',

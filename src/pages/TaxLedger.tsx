@@ -2,6 +2,8 @@ import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useStore } from '@/store'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import StatusBadge from '@/components/StatusBadge'
 
 const axisColor = '#8896ab'
 const splitColor = '#2a3548'
@@ -55,6 +57,7 @@ export default function TaxLedger() {
   const [period, setPeriod] = useState<PeriodTab>('月度')
   const [toast, setToast] = useState<string | null>(null)
   const [selectedEnterprise, setSelectedEnterprise] = useState<string>('all')
+  const [expandedDecls, setExpandedDecls] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!toast) return
@@ -97,16 +100,22 @@ export default function TaxLedger() {
   const enterpriseNames = useMemo(() => Array.from(new Set(taxRecords.map(r => r.enterpriseName))), [taxRecords])
 
   const filteredDeclarations = useMemo(() => {
-    if (selectedEnterprise === 'all') return taxDeclarations
-    return taxDeclarations.filter(d =>
+    const confirmed = taxDeclarations.filter(d => d.status === 'confirmed')
+    if (selectedEnterprise === 'all') return confirmed
+    return confirmed.filter(d =>
       d.enterpriseSummary.some(e => e.name === selectedEnterprise)
     )
   }, [taxDeclarations, selectedEnterprise])
 
-  const enterpriseDeclarationRecords = useMemo(() => {
-    if (selectedEnterprise === 'all') return taxRecords.filter(r => r.status === 'declared' || r.status === 'paid')
-    return taxRecords.filter(r => r.enterpriseName === selectedEnterprise && (r.status === 'declared' || r.status === 'paid'))
-  }, [taxRecords, selectedEnterprise])
+  const getDeclRecords = useCallback((declId: string) => {
+    const decl = taxDeclarations.find(d => d.id === declId)
+    if (!decl) return []
+    let records = taxRecords.filter(r => decl.records.includes(r.id))
+    if (selectedEnterprise !== 'all') {
+      records = records.filter(r => r.enterpriseName === selectedEnterprise)
+    }
+    return records
+  }, [taxDeclarations, taxRecords, selectedEnterprise])
 
   const tabs: PeriodTab[] = ['月度', '季度', '年度']
 
@@ -227,30 +236,69 @@ export default function TaxLedger() {
 
           <div className="glass-card p-4">
             <div className="flex items-center gap-2 mb-3 border-l-[3px] border-accent-green pl-3">
-              <span className="text-sm font-semibold text-text-primary">申报依据</span>
+              <FileText className="w-4 h-4 text-accent-green" />
+              <span className="text-sm font-semibold text-text-primary">申报批次记录</span>
               <span className="text-[10px] text-txt-muted">({selectedEnterprise === 'all' ? '全部企业' : selectedEnterprise})</span>
             </div>
-            {enterpriseDeclarationRecords.length > 0 ? (
+            {filteredDeclarations.length > 0 ? (
               <div className="space-y-2">
-                {enterpriseDeclarationRecords.map(r => (
-                  <div key={r.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-[var(--bg-secondary)] text-xs">
-                    <div className="min-w-0">
-                      <span className="text-text-primary">{r.pollutantType}</span>
-                      <span className="text-txt-muted ml-2">{r.period}</span>
+                {filteredDeclarations.slice().reverse().map(decl => {
+                  const isExpanded = expandedDecls.has(decl.id)
+                  const records = getDeclRecords(decl.id)
+                  const entSummary = selectedEnterprise === 'all'
+                    ? decl.enterpriseSummary
+                    : decl.enterpriseSummary.filter(e => e.name === selectedEnterprise)
+                  return (
+                    <div key={decl.id} className="rounded border border-[var(--border)] overflow-hidden">
+                      <button
+                        onClick={() => setExpandedDecls(prev => {
+                          const next = new Set(prev)
+                          if (next.has(decl.id)) next.delete(decl.id)
+                          else next.add(decl.id)
+                          return next
+                        })}
+                        className="w-full flex items-center justify-between p-2.5 hover:bg-[var(--bg-secondary)]/50 transition-colors text-left"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-text-primary font-mono font-medium">{decl.id}</span>
+                            <StatusBadge variant="declared" size="sm" />
+                          </div>
+                          <span className="text-[9px] text-txt-muted font-mono block mt-0.5">{decl.confirmedAt || decl.createdAt}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="stat-value text-[11px] text-accent-green font-semibold">{decl.totalTax.toLocaleString()}元</span>
+                          {isExpanded
+                            ? <ChevronUp className="w-3.5 h-3.5 text-txt-muted" />
+                            : <ChevronDown className="w-3.5 h-3.5 text-txt-muted" />}
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="border-t border-[var(--border)] p-2 bg-[var(--bg-secondary)]/30 space-y-2">
+                          <div className="text-[10px] text-txt-muted">
+                            包含企业 <span className="text-text-primary font-medium">{entSummary.length}家</span>
+                            ，污染物 <span className="text-text-primary font-medium">{records.length}项</span>
+                          </div>
+                          {records.map(r => (
+                            <div key={r.id} className="flex items-center justify-between py-1 px-2 rounded bg-[var(--bg-card)] text-[11px]">
+                              <div className="min-w-0">
+                                <span className="text-text-primary">{r.pollutantType}</span>
+                                {selectedEnterprise === 'all' && (
+                                  <span className="text-txt-muted ml-1.5">· {r.enterpriseName.slice(0, 4)}</span>
+                                )}
+                                <span className="text-txt-muted ml-1.5">{r.period}</span>
+                              </div>
+                              <span className="stat-value text-accent-green shrink-0 ml-2">{r.taxAmount.toLocaleString()}元</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="stat-value text-accent-green">{r.taxAmount.toLocaleString()}元</span>
-                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded',
-                        r.status === 'paid' ? 'bg-accent-blue-dim text-accent-blue' : 'bg-accent-green-dim text-accent-green'
-                      )}>
-                        {r.status === 'paid' ? '已缴纳' : '已申报'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
-              <p className="text-xs text-txt-muted py-3 text-center">暂无申报记录</p>
+              <p className="text-xs text-txt-muted py-4 text-center">暂无已确认申报记录</p>
             )}
           </div>
         </div>

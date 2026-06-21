@@ -54,7 +54,7 @@ export type WarningLevel = 'red' | 'orange' | 'yellow'
 export interface EvidenceFile {
   id: string
   name: string
-  type: 'photo' | 'video'
+  type: 'photo' | 'video' | 'document'
   size: string
   uploadedAt: string
 }
@@ -81,6 +81,16 @@ export interface WarningEvent {
   closeTime?: string
 }
 
+export interface EnforcementRecord {
+  checkTime: string
+  checkLocation: string
+  checkTarget: string
+  checkContent: string
+  problems: string
+  opinion: string
+  submittedAt: string
+}
+
 export interface EnforcementTask {
   id: string
   warningId: string
@@ -96,6 +106,8 @@ export interface EnforcementTask {
   evidenceFiles: EvidenceFile[]
   rectifyStep: number
   rectifyStepTimes: string[]
+  record?: EnforcementRecord
+  rectifyFiles: EvidenceFile[]
 }
 
 export interface TaxRecord {

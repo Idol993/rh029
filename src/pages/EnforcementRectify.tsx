@@ -1,17 +1,26 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '@/store'
-import StatCard from '@/components/StatCard'
-import ReactECharts from 'echarts-for-react'
-import { cn } from '@/lib/utils'
-import { ClipboardCheck, Wrench, CheckCircle2, Percent, Upload, CheckCircle, XCircle, Camera, Video } from 'lucide-react'
+import StatusBadge from '@/components/StatusBadge'
+import type { EvidenceFile } from '@/types'
+import { Check, Camera, Video, Upload, FileText, X, CheckCircle2, AlertCircle, Eye } from 'lucide-react'
 
-const axisColor = '#8896ab'
-const splitColor = '#2a3548'
-
-const stepLabels = ['下达整改', '企业反馈', '执法复核', '销号确认']
+const STEPS = [
+  { key: 0, label: '下达整改', desc: '通知企业整改', icon: AlertCircle },
+  { key: 1, label: '整改反馈', desc: '企业提交材料', icon: Upload },
+  { key: 2, label: '复核检查', desc: '现场核查确认', icon: CheckCircle2 },
+  { key: 3, label: '整改销号', desc: '流程闭环完成', icon: Check },
+]
 
 export default function EnforcementRectify() {
-  const { enforcementTasks, warningEvents, startEnforcement, completeEnforcement, setRectifyStep, closeRectify } = useStore()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { enforcementTasks, setRectifyStep, closeRectify, addRectifyFile, removeRectifyFile } = useStore()
+  const paramTaskId = searchParams.get('task')
+  const rectifyTasks = enforcementTasks.filter(t => t.type === 'rectify')
+  const [selectedId, setSelectedId] = useState(paramTaskId || rectifyTasks[0]?.id || '')
+  const task = enforcementTasks.find(t => t.id === selectedId)
+
   const [toast, setToast] = useState('')
 
   const showToast = (msg: string) => {
@@ -19,65 +28,54 @@ export default function EnforcementRectify() {
     setTimeout(() => setToast(''), 2500)
   }
 
-  const rectifyTasks = useMemo(() => enforcementTasks.filter(t => t.type === 'rectify'), [enforcementTasks])
-
-  const getCurrentStep = (task: typeof rectifyTasks[0]): number => {
-    if (task.status === 'closed') return 4
-    return task.rectifyStep
+  const handleUploadRectifyFile = () => {
+    if (!task) return
+    const fileNames = [
+      '整改报告',
+      '整改措施说明',
+      '现场复测照片',
+      '运维记录',
+      '检测报告',
+      '承诺书',
+    ]
+    const name = fileNames[Math.floor(Math.random() * fileNames.length)]
+    const isPhoto = name.includes('照片') || name.includes('记录')
+    const file: EvidenceFile = {
+      id: `rf${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: `${name}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '')}.${isPhoto ? 'jpg' : 'pdf'}`,
+      type: isPhoto ? 'photo' : 'document',
+      size: isPhoto ? `${(1 + Math.random() * 3).toFixed(1)}MB` : `${(0.2 + Math.random() * 1.5).toFixed(1)}MB`,
+      uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    }
+    addRectifyFile(task.id, file)
+    if (task.rectifyStep < 1) {
+      setRectifyStep(task.id, 1)
+    }
+    showToast(`已上传企业反馈材料：${file.name}`)
   }
 
-  const getWarningContext = (warningId: string) => warningEvents.find(w => w.id === warningId)
-
-  const pendingCount = rectifyTasks.filter(t => t.status === 'assigned').length
-  const inProgressCount = rectifyTasks.filter(t => t.status === 'in_progress').length
-  const closedCount = rectifyTasks.filter(t => t.status === 'closed').length
-  const completedCount = rectifyTasks.filter(t => t.status === 'completed').length
-  const closeRate = rectifyTasks.length > 0 ? ((closedCount / rectifyTasks.length) * 100).toFixed(1) : '0'
-
-  const chartOption = useMemo(() => ({
-    backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', backgroundColor: '#1a2332', borderColor: '#2a3548', textStyle: { color: '#e8edf5' } },
-    grid: { top: 16, right: 16, bottom: 24, left: 48 },
-    xAxis: { type: 'category', data: ['1月', '2月', '3月', '4月', '5月', '6月'], axisLine: { lineStyle: { color: splitColor } }, axisLabel: { color: axisColor, fontSize: 10 }, axisTick: { show: false } },
-    yAxis: { type: 'value', axisLine: { show: false }, axisLabel: { color: axisColor, fontSize: 10 }, splitLine: { lineStyle: { color: splitColor, type: 'dashed' } } },
-    series: [
-      { name: '下达', type: 'bar', stack: 'total', data: [5, 3, 6, 4, 7, 3], itemStyle: { color: '#ff6b35', borderRadius: [0, 0, 0, 0] }, barWidth: 20 },
-      { name: '整改中', type: 'bar', stack: 'total', data: [2, 1, 3, 2, 1, 1], itemStyle: { color: '#3b82f6' }, barWidth: 20 },
-      { name: '已销号', type: 'bar', stack: 'total', data: [4, 3, 4, 5, 6, 2], itemStyle: { color: '#00d4aa', borderRadius: [4, 4, 0, 0] }, barWidth: 20 },
-    ],
-  }), [])
-
-  const getStepStyle = (done: boolean, isCurrent: boolean) => {
-    if (done) return 'bg-accent-green border-accent-green text-white'
-    if (isCurrent) return 'bg-accent-blue border-accent-blue text-white animate-pulse'
-    return 'bg-[var(--bg-secondary)] border-[var(--border)] text-txt-muted'
+  const handleNextStep = (step: number) => {
+    if (!task) return
+    if (step === 1 && task.rectifyFiles.length === 0) {
+      showToast('请先上传企业整改反馈材料')
+      return
+    }
+    setRectifyStep(task.id, step)
+    showToast(`已进入：${STEPS[step].label}`)
   }
 
-  const handleStartRectify = (taskId: string) => {
-    startEnforcement(taskId)
-    setRectifyStep(taskId, 1)
-    showToast('已开始整改')
+  const handleCloseRectify = () => {
+    if (!task) return
+    closeRectify(task.id)
+    showToast('整改已销号，流程闭环完成')
   }
 
-  const handleSubmitReview = (taskId: string) => {
-    setRectifyStep(taskId, 2)
-    showToast('已提交复核')
-  }
-
-  const handleApproveReview = (taskId: string) => {
-    completeEnforcement(taskId)
-    setRectifyStep(taskId, 3)
-    showToast('复核已通过')
-  }
-
-  const handleRejectRectify = (taskId: string) => {
-    setRectifyStep(taskId, 1)
-    showToast('整改已驳回，请重新整改')
-  }
-
-  const handleCloseConfirm = (taskId: string) => {
-    closeRectify(taskId)
-    showToast('已销号确认，整改闭环完成')
+  if (!task) {
+    return (
+      <div className="flex items-center justify-center h-96 text-txt-muted">
+        暂无整改任务
+      </div>
+    )
   }
 
   return (
@@ -88,149 +86,236 @@ export default function EnforcementRectify() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="待整改" value={pendingCount} icon={<ClipboardCheck className="w-4 h-4 text-accent-orange" />} color="orange" pulse />
-        <StatCard label="整改中" value={inProgressCount} icon={<Wrench className="w-4 h-4 text-accent-blue" />} color="blue" />
-        <StatCard label="已销号" value={closedCount} icon={<CheckCircle2 className="w-4 h-4 text-accent-green" />} color="green" />
-        <StatCard label="销号率" value={closeRate} unit="%" icon={<Percent className="w-4 h-4 text-accent-cyan" />} color="cyan" />
-      </div>
-
-      <div className="space-y-4">
-        {rectifyTasks.map(task => {
-          const currentStep = getCurrentStep(task)
-          const warning = getWarningContext(task.warningId)
-          const steps = stepLabels.map((label, i) => ({
-            label,
-            done: i < currentStep,
-          }))
-
-          return (
-            <div key={task.id} className="glass-card p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-text-primary mb-1">{task.enterpriseName}</h3>
-                  <p className="text-xs text-accent-red">
-                    {warning ? `${warning.typeName}：${warning.description}` : task.description}
-                  </p>
-                </div>
-                <span className={cn('text-[11px] px-2 py-0.5 rounded font-medium shrink-0',
-                  task.status === 'closed' ? 'bg-accent-green-dim text-accent-green' :
-                  currentStep === 0 ? 'bg-accent-orange-dim text-accent-orange' :
-                  currentStep >= 3 ? 'bg-accent-cyan-dim text-accent-cyan' :
-                  'bg-accent-blue-dim text-accent-blue'
-                )}>
-                  {task.status === 'closed' ? '已销号' : currentStep === 0 ? '待整改' : currentStep >= 3 ? '待销号' : '整改中'}
-                </span>
-              </div>
-
-              <div className="text-xs text-txt-secondary mb-4">
-                <span className="text-txt-muted">整改要求：</span>{task.description}
-                <span className="ml-4 text-txt-muted">派单时间：</span>
-                <span className="text-text-primary">{task.assignTime}</span>
-              </div>
-
-              <div className="flex items-center gap-0 mb-4">
-                {steps.map((step, i) => {
-                  const stepTime = task.rectifyStepTimes?.[i] || ''
-                  return (
-                    <div key={i} className="flex items-center flex-1">
-                      <div className="flex flex-col items-center flex-1">
-                        <div className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-medium transition-all', getStepStyle(step.done, i === currentStep))}>
-                          {step.done ? '✓' : i + 1}
-                        </div>
-                        <span className={cn('text-[10px] mt-1 whitespace-nowrap', step.done ? 'text-accent-green' : i === currentStep ? 'text-accent-blue' : 'text-txt-muted')}>
-                          {step.label}
-                        </span>
-                        {stepTime && <span className="text-[9px] text-txt-muted">{stepTime}</span>}
-                      </div>
-                      {i < steps.length - 1 && (
-                        <div className={cn('h-0.5 flex-1 -mt-4', step.done ? 'bg-accent-green' : 'bg-[var(--border)]')} />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {task.evidenceFiles.length > 0 && (
-                <div className="mb-3 pt-3 border-t border-[var(--border)]/30">
-                  <span className="text-[11px] text-txt-muted block mb-1.5">关联取证材料:</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {task.evidenceFiles.map(f => (
-                      <span key={f.id} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[var(--bg-secondary)] text-txt-secondary">
-                        {f.type === 'photo' ? <Camera className="w-3 h-3 text-accent-cyan" /> : <Video className="w-3 h-3 text-accent-blue" />}
-                        {f.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {task.status !== 'closed' && (
-                <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/50">
-                  <div className="flex items-center gap-2">
-                    {currentStep >= 1 && currentStep < 3 && (
-                      <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1">
-                        <Upload className="w-3 h-3" />上传整改材料
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {currentStep === 0 && (
-                      <button
-                        onClick={() => handleStartRectify(task.id)}
-                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
-                      >开始整改</button>
-                    )}
-                    {currentStep === 1 && (
-                      <button
-                        onClick={() => handleSubmitReview(task.id)}
-                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
-                      >提交复核</button>
-                    )}
-                    {currentStep === 2 && (
-                      <>
-                        <button
-                          onClick={() => handleApproveReview(task.id)}
-                          className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors flex items-center gap-1"
-                        >
-                          <CheckCircle className="w-3 h-3" />通过复核
-                        </button>
-                        <button
-                          onClick={() => handleRejectRectify(task.id)}
-                          className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-red-dim text-accent-red hover:bg-accent-red/20 transition-colors flex items-center gap-1"
-                        >
-                          <XCircle className="w-3 h-3" />驳回整改
-                        </button>
-                      </>
-                    )}
-                    {currentStep >= 3 && (
-                      <button
-                        onClick={() => handleCloseConfirm(task.id)}
-                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
-                      >销号确认</button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {task.status === 'closed' && task.completeTime && (
-                <div className="pt-3 border-t border-[var(--border)]/50 text-[10px] text-txt-muted">
-                  销号时间: {task.completeTime}
-                </div>
-              )}
+      <div className="glass-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 border-l-[3px] border-accent-yellow pl-3">
+            <span className="text-sm font-semibold text-text-primary">整改销号管理</span>
+          </div>
+          <StatusBadge variant={task.status} />
+        </div>
+        <div className="grid grid-cols-4 gap-4 text-xs">
+          <div>
+            <span className="text-txt-muted block mb-0.5">任务编号</span>
+            <span className="text-text-primary font-mono">{task.id}</span>
+          </div>
+          <div>
+            <span className="text-txt-muted block mb-0.5">企业名称</span>
+            <span className="text-text-primary font-medium">{task.enterpriseName}</span>
+          </div>
+          <div>
+            <span className="text-txt-muted block mb-0.5">排口编号</span>
+            <span className="text-text-primary font-mono">{task.outletCode}</span>
+          </div>
+          <div>
+            <span className="text-txt-muted block mb-0.5">派单时间</span>
+            <span className="text-text-primary font-mono">{task.assignTime}</span>
+          </div>
+        </div>
+        {rectifyTasks.length > 1 && (
+          <div className="mt-3 pt-3 border-t border-[var(--border)]">
+            <span className="text-[10px] text-txt-muted block mb-2">切换整改任务：</span>
+            <div className="flex flex-wrap gap-2">
+              {rectifyTasks.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedId(t.id)}
+                  className={`px-3 py-1.5 rounded text-[10px] transition-colors ${
+                    t.id === selectedId
+                      ? 'bg-accent-cyan/20 text-accent-cyan border border-accent-cyan/30'
+                      : 'bg-[var(--bg-secondary)] text-txt-secondary border border-[var(--border)] hover:text-text-primary'
+                  }`}
+                >
+                  {t.enterpriseName.slice(0, 6)} · {t.id}
+                </button>
+              ))}
             </div>
-          )
-        })}
-        {rectifyTasks.length === 0 && (
-          <div className="glass-card p-8 text-center text-txt-muted text-sm">暂无整改任务</div>
+          </div>
         )}
       </div>
 
       <div className="glass-card p-4">
-        <div className="flex items-center gap-2 mb-4 border-l-[3px] border-accent-green pl-3">
-          <span className="text-sm font-semibold text-text-primary">整改统计</span>
+        <div className="flex items-center gap-2 mb-5 border-l-[3px] border-accent-green pl-3">
+          <span className="text-sm font-semibold text-text-primary">整改进度</span>
         </div>
-        <ReactECharts option={chartOption} style={{ height: 220 }} />
+        <div className="flex items-start relative">
+          {STEPS.map((step, idx) => (
+            <div key={step.key} className="flex-1 flex flex-col items-center relative z-10">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                task.rectifyStep > idx
+                  ? 'bg-accent-green border-accent-green text-white'
+                  : task.rectifyStep === idx
+                  ? 'bg-accent-yellow/20 border-accent-yellow text-accent-yellow animate-pulse'
+                  : 'bg-[var(--bg-secondary)] border-[var(--border-light)] text-txt-muted'
+              }`}>
+                {task.rectifyStep > idx ? <Check className="w-4 h-4" /> : <step.icon className="w-4 h-4" />}
+              </div>
+              <span className="text-xs mt-2 text-text-primary font-medium">{step.label}</span>
+              <span className="text-[10px] mt-0.5 text-txt-secondary">{step.desc}</span>
+              {task.rectifyStepTimes[idx + 1] && (
+                <span className="text-[9px] mt-1 text-txt-muted font-mono">{task.rectifyStepTimes[idx + 1].slice(5, 16)}</span>
+              )}
+              <div className="mt-2">
+                {task.rectifyStep === idx && task.status !== 'closed' && (
+                  <button
+                    onClick={() => handleNextStep(idx + 1)}
+                    className="px-3 py-1 rounded text-[10px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+                  >
+                    进入下一步
+                  </button>
+                )}
+                {task.rectifyStep >= idx + 1 && task.rectifyStepTimes[idx + 1] && idx < 3 && (
+                  <span className="text-[10px] text-accent-green">✓ 已完成</span>
+                )}
+                {task.rectifyStep === 3 && idx === 3 && task.status !== 'closed' && (
+                  <button
+                    onClick={handleCloseRectify}
+                    className="px-3 py-1 rounded text-[10px] font-medium bg-accent-green text-white hover:bg-accent-green/80 transition-colors"
+                  >
+                    销号确认
+                  </button>
+                )}
+                {task.status === 'closed' && idx === 3 && (
+                  <span className="text-[10px] text-accent-green font-medium">✓ 已销号</span>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="absolute top-5 left-0 right-0 h-[2px] bg-[var(--border-light)] -z-0 mx-10" />
+          <div
+            className="absolute top-5 left-0 h-[2px] bg-accent-green -z-0 transition-all duration-500 mx-10"
+            style={{ width: `calc(${(Math.min(task.rectifyStep, 3) / 3) * 100}% - 5rem * ${(Math.min(task.rectifyStep, 3) / 3)})` }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 border-l-[3px] border-accent-blue pl-3">
+              <Camera className="w-4 h-4 text-accent-blue" />
+              <span className="text-sm font-semibold text-text-primary">执法取证材料</span>
+            </div>
+            <span className="text-[10px] text-txt-muted">{task.evidenceFiles.length} 份</span>
+          </div>
+          {task.evidenceFiles.length === 0 ? (
+            <p className="text-[11px] text-txt-muted py-8 text-center">暂无执法取证材料</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2.5">
+              {task.evidenceFiles.map(f => (
+                <div key={f.id} className="rounded border border-accent-blue/30 bg-accent-blue-dim/30 p-2">
+                  <div className="aspect-video rounded bg-[var(--bg-secondary)]/60 flex items-center justify-center mb-1.5">
+                    {f.type === 'photo'
+                      ? <Camera className="w-5 h-5 text-txt-secondary" />
+                      : f.type === 'video'
+                      ? <Video className="w-5 h-5 text-txt-secondary" />
+                      : <FileText className="w-5 h-5 text-txt-secondary" />}
+                  </div>
+                  <p className="text-[10px] text-text-primary truncate font-medium">{f.name}</p>
+                  <div className="flex items-center justify-between text-[9px] text-txt-muted mt-0.5">
+                    <span>{f.size}</span>
+                    <span className="font-mono">{f.uploadedAt.slice(5, 16)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 border-l-[3px] border-accent-yellow pl-3">
+              <FileText className="w-4 h-4 text-accent-yellow" />
+              <span className="text-sm font-semibold text-text-primary">企业整改反馈材料</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-txt-muted">{task.rectifyFiles.length} 份</span>
+              {task.status !== 'closed' && (
+                <button
+                  onClick={handleUploadRectifyFile}
+                  className="px-2.5 py-1 rounded text-[10px] font-medium bg-accent-yellow-dim text-accent-yellow hover:bg-accent-yellow/20 transition-colors flex items-center gap-1"
+                >
+                  <Upload className="w-3 h-3" /> 上传整改材料
+                </button>
+              )}
+            </div>
+          </div>
+          {task.rectifyFiles.length === 0 ? (
+            <div className="py-8 text-center">
+              <Upload className="w-8 h-8 text-txt-muted mx-auto mb-2 opacity-40" />
+              <p className="text-[11px] text-txt-muted">点击右上角按钮上传企业反馈材料</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {task.rectifyFiles.map(f => (
+                <div key={f.id} className="flex items-center justify-between p-2.5 rounded bg-[var(--bg-secondary)] border-l-2 border-accent-yellow">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded bg-accent-yellow-dim/50 flex items-center justify-center shrink-0">
+                      {f.type === 'photo'
+                        ? <Camera className="w-4 h-4 text-accent-yellow" />
+                        : f.type === 'video'
+                        ? <Video className="w-4 h-4 text-accent-yellow" />
+                        : <FileText className="w-4 h-4 text-accent-yellow" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-text-primary font-medium truncate">{f.name}</p>
+                      <div className="flex items-center gap-2 text-[9px] text-txt-muted">
+                        <span>{f.size}</span>
+                        <span className="font-mono">{f.uploadedAt}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button className="p-1 rounded hover:bg-[var(--border-light)]/50 text-txt-muted hover:text-accent-cyan transition-colors">
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    {task.status !== 'closed' && (
+                      <button
+                        onClick={() => removeRectifyFile(task.id, f.id)}
+                        className="p-1 rounded hover:bg-accent-red-dim/50 text-txt-muted hover:text-accent-red transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="glass-card p-4 flex items-center justify-between">
+        <button
+          onClick={() => navigate(`/enforcement/detail?task=${task.id}`)}
+          className="text-[11px] text-txt-secondary hover:text-accent-cyan transition-colors flex items-center gap-1"
+        >
+          查看完整执法档案
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/enforcement')}
+            className="px-4 py-2 rounded text-xs font-medium bg-[var(--bg-secondary)] border border-[var(--border)] text-txt-secondary hover:text-text-primary transition-colors"
+          >
+            返回执法管理
+          </button>
+          {task.status === 'closed' ? (
+            <span className="px-4 py-2 rounded text-xs font-medium bg-accent-green/10 text-accent-green border border-accent-green/30">
+              ✓ 已销号完成
+            </span>
+          ) : (
+            <button
+              onClick={handleCloseRectify}
+              disabled={task.rectifyStep < 3}
+              className={`px-4 py-2 rounded text-xs font-medium transition-colors ${
+                task.rectifyStep < 3
+                  ? 'bg-[var(--bg-secondary)] text-txt-muted cursor-not-allowed border border-[var(--border)]'
+                  : 'bg-accent-green text-white hover:bg-accent-green/80'
+              }`}
+            >
+              销号确认
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

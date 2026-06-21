@@ -4,7 +4,7 @@ import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
-import { Calculator, Building2, CheckCircle, FileText, Eye, X } from 'lucide-react'
+import { Calculator, Building2, CheckCircle, FileText, Eye, X, ChevronDown, ChevronUp, History } from 'lucide-react'
 import type { TaxDeclaration } from '@/types'
 
 const axisColor = '#8896ab'
@@ -15,6 +15,7 @@ export default function TaxCalc() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
   const [previewDecl, setPreviewDecl] = useState<TaxDeclaration | null>(null)
+  const [expandedDeclIds, setExpandedDeclIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!toast) return
@@ -309,6 +310,122 @@ export default function TaxCalc() {
         <p className="text-[11px] text-txt-muted mt-3">
           应纳税额 = 排放量 ÷ 污染当量值 × 适用税额 | 大气污染物每污染当量1.2元，水污染物每污染当量1.4元
         </p>
+      </div>
+
+      <div className="glass-card p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 border-l-[3px] border-accent-purple pl-3">
+            <History className="w-4 h-4 text-accent-purple" />
+            <span className="text-sm font-semibold text-text-primary">申报记录</span>
+            <span className="text-[10px] text-txt-muted">({taxDeclarations.filter(d => d.status === 'confirmed').length} 批已确认)</span>
+          </div>
+        </div>
+        {taxDeclarations.length === 0 ? (
+          <div className="py-10 text-center">
+            <History className="w-10 h-10 text-txt-muted mx-auto mb-2 opacity-30" />
+            <p className="text-[11px] text-txt-muted">暂无申报记录，请先在上方核算明细表选择记录并生成申报表</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {taxDeclarations.slice().reverse().map(decl => {
+              const isExpanded = expandedDeclIds.has(decl.id)
+              const declRecords = taxRecords.filter(r => decl.records.includes(r.id))
+              return (
+                <div key={decl.id} className="rounded border border-[var(--border)] overflow-hidden">
+                  <button
+                    onClick={() => setExpandedDeclIds(prev => {
+                      const next = new Set(prev)
+                      if (next.has(decl.id)) next.delete(decl.id)
+                      else next.add(decl.id)
+                      return next
+                    })}
+                    className="w-full flex items-center justify-between p-3 hover:bg-[var(--bg-secondary)]/50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${
+                        decl.status === 'confirmed' ? 'bg-accent-green-dim' : 'bg-accent-yellow-dim'
+                      }`}>
+                        {decl.status === 'confirmed'
+                          ? <CheckCircle className="w-4 h-4 text-accent-green" />
+                          : <Eye className="w-4 h-4 text-accent-yellow" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-text-primary font-mono font-medium">{decl.id}</span>
+                          <StatusBadge variant={decl.status === 'confirmed' ? 'declared' : 'calculated'} size="sm" />
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 text-[10px] text-txt-muted">
+                          <span>创建 {decl.createdAt}</span>
+                          {decl.confirmedAt && <span>确认 {decl.confirmedAt}</span>}
+                          <span>申报期 {decl.period}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <div className="hidden md:grid grid-cols-3 gap-4 text-right text-[11px]">
+                        <div>
+                          <span className="text-txt-muted block text-[9px]">企业数</span>
+                          <span className="stat-value text-text-primary">{decl.enterpriseSummary.length}</span>
+                        </div>
+                        <div>
+                          <span className="text-txt-muted block text-[9px]">记录数</span>
+                          <span className="stat-value text-text-primary">{decl.records.length}</span>
+                        </div>
+                        <div>
+                          <span className="text-txt-muted block text-[9px]">税额合计</span>
+                          <span className="stat-value text-accent-green font-semibold">{decl.totalTax.toLocaleString()}元</span>
+                        </div>
+                      </div>
+                      {isExpanded
+                        ? <ChevronUp className="w-4 h-4 text-txt-muted" />
+                        : <ChevronDown className="w-4 h-4 text-txt-muted" />}
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-[var(--border)] p-3 bg-[var(--bg-secondary)]/30 space-y-3">
+                      <div>
+                        <span className="text-[10px] text-txt-secondary block mb-1.5 font-medium">企业明细</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                          {decl.enterpriseSummary.map(e => (
+                            <div key={e.name} className="flex items-center justify-between px-2.5 py-1.5 rounded bg-[var(--bg-card)] text-[11px]">
+                              <span className="text-text-primary truncate">{e.name}</span>
+                              <span className="stat-value text-accent-green font-medium shrink-0 ml-2">{e.totalTax.toLocaleString()}元</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-txt-secondary block mb-1.5 font-medium">污染物明细</span>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[11px]">
+                            <thead>
+                              <tr className="border-b border-[var(--border)]/70">
+                                <th className="text-left py-1.5 px-2 text-txt-secondary font-medium">企业</th>
+                                <th className="text-left py-1.5 px-2 text-txt-secondary font-medium">污染物</th>
+                                <th className="text-right py-1.5 px-2 text-txt-secondary font-medium">排放量(kg)</th>
+                                <th className="text-right py-1.5 px-2 text-txt-secondary font-medium">税额(元)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {declRecords.map(r => (
+                                <tr key={r.id} className="border-b border-[var(--border)]/30">
+                                  <td className="py-1.5 px-2 text-text-primary">{r.enterpriseName}</td>
+                                  <td className="py-1.5 px-2 text-text-primary">{r.pollutantType}</td>
+                                  <td className="py-1.5 px-2 text-right stat-value">{r.emission.toLocaleString()}</td>
+                                  <td className="py-1.5 px-2 text-right stat-value text-accent-green">{r.taxAmount.toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

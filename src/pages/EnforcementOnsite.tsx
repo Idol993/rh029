@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '@/store'
 import StatusBadge from '@/components/StatusBadge'
-import type { EvidenceFile } from '@/types'
+import type { EvidenceFile, EnforcementRecord } from '@/types'
 import { cn } from '@/lib/utils'
 import { Upload, FileText, Camera, Video, X, Save, Send, AlertTriangle, Gavel, Plus } from 'lucide-react'
 
@@ -20,14 +20,21 @@ export default function EnforcementOnsite() {
     setTimeout(() => setToast(''), 2500)
   }
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<EnforcementRecord>({
     checkTime: new Date().toISOString().slice(0, 16),
     checkLocation: task ? `${task.enterpriseName} - ${task.outletCode}` : '',
     checkTarget: task?.enterpriseName || '',
     checkContent: '',
     problems: '',
     opinion: '',
+    submittedAt: '',
   })
+
+  useEffect(() => {
+    if (task?.record) {
+      setForm(prev => ({ ...prev, ...task.record }))
+    }
+  }, [task?.id])
 
   const [uploadSlots] = useState([
     { id: 's1', label: '现场全景', type: 'photo' as const, icon: Camera },
@@ -36,7 +43,7 @@ export default function EnforcementOnsite() {
     { id: 's4', label: '现场录像', type: 'video' as const, icon: Video },
   ])
 
-  const updateField = (field: keyof typeof form, value: string) => {
+  const updateField = (field: keyof EnforcementRecord, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
@@ -58,24 +65,34 @@ export default function EnforcementOnsite() {
     removeEnforcementEvidence(task.id, fileId)
   }
 
+  const buildRecord = (): EnforcementRecord => ({
+    checkTime: form.checkTime,
+    checkLocation: form.checkLocation,
+    checkTarget: form.checkTarget,
+    checkContent: form.checkContent,
+    problems: form.problems,
+    opinion: form.opinion,
+    submittedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+  })
+
   const handleSubmitRecord = () => {
     if (!task) return
-    completeEnforcement(task.id)
+    completeEnforcement(task.id, buildRecord())
     showToast('笔录已提交，任务已完成')
     setTimeout(() => navigate('/enforcement'), 800)
   }
 
   const handleIssueRectify = () => {
     if (!task) return
+    completeEnforcement(task.id, buildRecord())
     const rid = createRectifyFromEnforcement(task.id)
-    completeEnforcement(task.id)
     showToast(`整改已下达(编号${rid})，任务已完成`)
     setTimeout(() => navigate('/enforcement/rectify'), 800)
   }
 
   const handlePenalty = () => {
     if (!task) return
-    completeEnforcement(task.id)
+    completeEnforcement(task.id, buildRecord())
     showToast('已立案处罚')
     setTimeout(() => navigate('/enforcement'), 800)
   }

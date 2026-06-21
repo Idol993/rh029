@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { UserRole, WarningEvent, EnforcementTask, TaxRecord, MaintenanceOrder, FraudClue, EvidenceFile, TaxDeclaration } from '@/types'
+import type { UserRole, WarningEvent, EnforcementTask, TaxRecord, MaintenanceOrder, FraudClue, EvidenceFile, TaxDeclaration, EnforcementRecord } from '@/types'
 import { mockData } from '@/data/mockData'
 
 let nextId = 1000
@@ -37,9 +37,11 @@ interface AppState {
   closeWarning: (id: string) => void
   createEnforcementFromWarning: (warningId: string, enforcerName: string) => string
   startEnforcement: (id: string) => void
-  completeEnforcement: (id: string) => void
+  completeEnforcement: (id: string, record?: EnforcementRecord) => void
   addEnforcementEvidence: (taskId: string, file: EvidenceFile) => void
   removeEnforcementEvidence: (taskId: string, fileId: string) => void
+  addRectifyFile: (taskId: string, file: EvidenceFile) => void
+  removeRectifyFile: (taskId: string, fileId: string) => void
   createRectifyFromEnforcement: (taskId: string) => string
   setRectifyStep: (taskId: string, step: number) => void
   closeRectify: (taskId: string) => void
@@ -114,6 +116,7 @@ export const useStore = create<AppState>()(
           evidenceFiles: [],
           rectifyStep: 0,
           rectifyStepTimes: [t],
+          rectifyFiles: [],
         }
         set((s) => ({
           enforcementTasks: [...s.enforcementTasks, task],
@@ -130,10 +133,17 @@ export const useStore = create<AppState>()(
         ),
       })),
 
-      completeEnforcement: (id) => set((s) => ({
-        enforcementTasks: s.enforcementTasks.map((t) =>
-          t.id === id ? { ...t, status: 'completed' as const, completeTime: now() } : t
-        ),
+      completeEnforcement: (id, record) => set((s) => ({
+        enforcementTasks: s.enforcementTasks.map((t) => {
+          if (t.id !== id) return t
+          const submittedAt = now()
+          return {
+            ...t,
+            status: 'completed' as const,
+            completeTime: submittedAt,
+            record: record ? { ...record, submittedAt } : t.record,
+          }
+        }),
       })),
 
       addEnforcementEvidence: (taskId, file) => set((s) => ({
@@ -145,6 +155,18 @@ export const useStore = create<AppState>()(
       removeEnforcementEvidence: (taskId, fileId) => set((s) => ({
         enforcementTasks: s.enforcementTasks.map((t) =>
           t.id === taskId ? { ...t, evidenceFiles: t.evidenceFiles.filter(f => f.id !== fileId) } : t
+        ),
+      })),
+
+      addRectifyFile: (taskId, file) => set((s) => ({
+        enforcementTasks: s.enforcementTasks.map((t) =>
+          t.id === taskId ? { ...t, rectifyFiles: [...t.rectifyFiles, file] } : t
+        ),
+      })),
+
+      removeRectifyFile: (taskId, fileId) => set((s) => ({
+        enforcementTasks: s.enforcementTasks.map((t) =>
+          t.id === taskId ? { ...t, rectifyFiles: t.rectifyFiles.filter(f => f.id !== fileId) } : t
         ),
       })),
 
@@ -167,6 +189,7 @@ export const useStore = create<AppState>()(
           evidenceFiles: [...task.evidenceFiles],
           rectifyStep: 0,
           rectifyStepTimes: [t],
+          rectifyFiles: [],
         }
         set((s) => ({
           enforcementTasks: [...s.enforcementTasks, rectify],
@@ -276,6 +299,7 @@ export const useStore = create<AppState>()(
           evidenceFiles: [],
           rectifyStep: 0,
           rectifyStepTimes: [t],
+          rectifyFiles: [],
         }
         set((s) => ({
           fraudClues: s.fraudClues.map((c) =>
