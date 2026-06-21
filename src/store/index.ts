@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { UserRole, WarningEvent, EnforcementTask, TaxRecord, MaintenanceOrder, FraudClue } from '@/types'
+import type { UserRole, WarningEvent, EnforcementTask, TaxRecord, MaintenanceOrder, FraudClue, EvidenceFile, TaxDeclaration } from '@/types'
 import { mockData } from '@/data/mockData'
 
 let nextId = 1000
@@ -23,6 +23,7 @@ interface AppState {
   warningEvents: WarningEvent[]
   enforcementTasks: EnforcementTask[]
   taxRecords: TaxRecord[]
+  taxDeclarations: TaxDeclaration[]
   maintenanceOrders: MaintenanceOrder[]
   qualityRules: typeof mockData.qualityRules
   fraudClues: FraudClue[]
@@ -36,7 +37,13 @@ interface AppState {
   createEnforcementFromWarning: (warningId: string, enforcerName: string) => string
   startEnforcement: (id: string) => void
   completeEnforcement: (id: string) => void
+  addEnforcementEvidence: (taskId: string, file: EvidenceFile) => void
+  removeEnforcementEvidence: (taskId: string, fileId: string) => void
   createRectifyFromEnforcement: (taskId: string) => string
+  setRectifyStep: (taskId: string, step: number) => void
+  closeRectify: (taskId: string) => void
+  generateDeclaration: (recordIds: string[]) => string
+  confirmDeclaration: (declarationId: string) => void
   declareTax: (ids: string[]) => void
   approveQualityRecord: (id: string) => void
   rejectQualityRecord: (id: string) => void
@@ -59,6 +66,7 @@ export const useStore = create<AppState>((set, get) => ({
   warningEvents: [...mockData.warningEvents],
   enforcementTasks: [...mockData.enforcementTasks],
   taxRecords: [...mockData.taxRecords],
+  taxDeclarations: [],
   maintenanceOrders: [...mockData.maintenanceOrders],
   qualityRules: mockData.qualityRules,
   fraudClues: [...mockData.fraudClues],
@@ -68,19 +76,19 @@ export const useStore = create<AppState>((set, get) => ({
 
   processWarning: (id, handler) => set((s) => ({
     warningEvents: s.warningEvents.map((w) =>
-      w.id === id ? { ...w, status: 'processing' as const, handler } : w
+      w.id === id ? { ...w, status: 'processing' as const, handler, processTime: now() } : w
     ),
   })),
 
   resolveWarning: (id) => set((s) => ({
     warningEvents: s.warningEvents.map((w) =>
-      w.id === id ? { ...w, status: 'resolved' as const } : w
+      w.id === id ? { ...w, status: 'resolved' as const, resolveTime: now() } : w
     ),
   })),
 
   closeWarning: (id) => set((s) => ({
     warningEvents: s.warningEvents.map((w) =>
-      w.id === id ? { ...w, status: 'closed' as const } : w
+      w.id === id ? { ...w, status: 'closed' as const, closeTime: now() } : w
     ),
   })),
 
@@ -99,11 +107,13 @@ export const useStore = create<AppState>((set, get) => ({
       status: 'assigned',
       assignTime: now(),
       description: `${warning.typeName}现场核查 - ${warning.description}`,
+      evidenceFiles: [],
+      rectifyStep: 0,
     }
     set((s) => ({
       enforcementTasks: [...s.enforcementTasks, task],
       warningEvents: s.warningEvents.map((w) =>
-        w.id === warningId ? { ...w, status: 'dispatched' as const, handler: enforcerName } : w
+        w.id === warningId ? { ...w, status: 'dispatched' as const, handler: enforcerName, dispatchTime: now() } : w
       ),
     }))
     return newId
@@ -118,6 +128,18 @@ export const useStore = create<AppState>((set, get) => ({
   completeEnforcement: (id) => set((s) => ({
     enforcementTasks: s.enforcementTasks.map((t) =>
       t.id === id ? { ...t, status: 'completed' as const, completeTime: now() } : t
+    ),
+  })),
+
+  addEnforcementEvidence: (taskId, file) => set((s) => ({
+    enforcementTasks: s.enforcementTasks.map((t) =>
+      t.id === taskId ? { ...t, evidenceFiles: [...t.evidenceFiles, file] } : t
+    ),
+  })),
+
+  removeEnforcementEvidence: (taskId, fileId) => set((s) => ({
+    enforcementTasks: s.enforcementTasks.map((t) =>
+      t.id === taskId ? { ...t, evidenceFiles: t.evidenceFiles.filter(f => f.id !== fileId) } : t
     ),
   })),
 
@@ -136,6 +158,8 @@ export const useStore = create<AppState>((set, get) => ({
       status: 'assigned',
       assignTime: now(),
       description: `${task.enterpriseName}整改督办 - 源自执法任务${task.id}`,
+      evidenceFiles: [...task.evidenceFiles],
+      rectifyStep: 0,
     }
     set((s) => ({
       enforcementTasks: [...s.enforcementTasks, rectify],
@@ -143,13 +167,77 @@ export const useStore = create<AppState>((set, get) => ({
     return newId
   },
 
-  declareTax: (ids) => set((s) => ({
-    taxRecords: s.taxRecords.map((r) =>
-      ids.includes(r.id) && r.status === 'calculated'
-        ? { ...r, status: 'declared' as const }
-        : r
+  setRectifyStep: (taskId, step) => set((s) => ({
+    enforcementTasks: s.enforcementTasks.map((t) =>
+      t.id === taskId ? { ...t, rectifyStep: step } : t
     ),
   })),
+
+  closeRectify: (taskId) => set((s) => ({
+    enforcementTasks: s.enforcementTasks.map((t) =>
+      t.id === taskId ? { ...t, status: 'closed' as const, rectifyStep: 4, completeTime: t.completeTime || now() } : t
+    ),
+  })),
+
+  generateDeclaration: (recordIds) => {
+    const records = get().taxRecords.filter(r => recordIds.includes(r.id) && r.status === 'calculated')
+    if (records.length === 0) return ''
+    const declId = genId('decl')
+    const enterpriseMap = new Map<string, { totalTax: number; pollutantCount: number }>()
+    records.forEach(r => {
+      const existing = enterpriseMap.get(r.enterpriseName)
+      if (existing) {
+        existing.totalTax += r.taxAmount
+        existing.pollutantCount++
+      } else {
+        enterpriseMap.set(r.enterpriseName, { totalTax: r.taxAmount, pollutantCount: 1 })
+      }
+    })
+    const declaration: TaxDeclaration = {
+      id: declId,
+      period: records[0].period,
+      createdAt: now(),
+      status: 'preview',
+      records: recordIds,
+      enterpriseSummary: Array.from(enterpriseMap.entries()).map(([name, data]) => ({
+        name,
+        totalTax: Math.round(data.totalTax * 100) / 100,
+        pollutantCount: data.pollutantCount,
+      })),
+      totalTax: Math.round(records.reduce((s, r) => s + r.taxAmount, 0) * 100) / 100,
+    }
+    set((s) => ({
+      taxDeclarations: [...s.taxDeclarations, declaration],
+    }))
+    return declId
+  },
+
+  confirmDeclaration: (declarationId) => {
+    const decl = get().taxDeclarations.find(d => d.id === declarationId)
+    if (!decl || decl.status !== 'preview') return
+    const confirmedAt = now()
+    set((s) => ({
+      taxDeclarations: s.taxDeclarations.map(d =>
+        d.id === declarationId ? { ...d, status: 'confirmed' as const, confirmedAt } : d
+      ),
+      taxRecords: s.taxRecords.map(r =>
+        decl.records.includes(r.id) && r.status === 'calculated'
+          ? { ...r, status: 'declared' as const, declaredAt: confirmedAt, declarationId }
+          : r
+      ),
+    }))
+  },
+
+  declareTax: (ids) => {
+    const confirmedAt = now()
+    set((s) => ({
+      taxRecords: s.taxRecords.map((r) =>
+        ids.includes(r.id) && r.status === 'calculated'
+          ? { ...r, status: 'declared' as const, declaredAt: confirmedAt }
+          : r
+      ),
+    }))
+  },
 
   approveQualityRecord: (_id) => set((s) => s),
   rejectQualityRecord: (_id) => set((s) => s),
@@ -169,6 +257,8 @@ export const useStore = create<AppState>((set, get) => ({
       status: 'assigned',
       assignTime: now(),
       description: `疑似数据造假现场核查 - ${clue.description}`,
+      evidenceFiles: [],
+      rectifyStep: 0,
     }
     set((s) => ({
       fraudClues: s.fraudClues.map((c) =>

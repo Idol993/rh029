@@ -51,9 +51,10 @@ const mockLedger: EnterpriseLedger[] = [
 ]
 
 export default function TaxLedger() {
-  const { taxRecords, declareTax } = useStore()
+  const { taxRecords, taxDeclarations, generateDeclaration, confirmDeclaration } = useStore()
   const [period, setPeriod] = useState<PeriodTab>('月度')
   const [toast, setToast] = useState<string | null>(null)
+  const [selectedEnterprise, setSelectedEnterprise] = useState<string>('all')
 
   useEffect(() => {
     if (!toast) return
@@ -67,9 +68,9 @@ export default function TaxLedger() {
       setToast('暂无待申报记录')
       return
     }
-    declareTax(calculatedIds)
-    setToast(`已确认申报${calculatedIds.length}条记录`)
-  }, [taxRecords, declareTax])
+    generateDeclaration(calculatedIds)
+    setToast('申报表已生成，请在税额明细页确认申报')
+  }, [taxRecords, generateDeclaration])
 
   const trendOption = useMemo(() => {
     const months = ['1月', '2月', '3月', '4月', '5月', '6月']
@@ -93,6 +94,20 @@ export default function TaxLedger() {
   const enterpriseCount = useMemo(() => new Set(taxRecords.map(r => r.enterpriseName)).size, [taxRecords])
   const calculatedCount = useMemo(() => taxRecords.filter(r => r.status === 'calculated').length, [taxRecords])
 
+  const enterpriseNames = useMemo(() => Array.from(new Set(taxRecords.map(r => r.enterpriseName))), [taxRecords])
+
+  const filteredDeclarations = useMemo(() => {
+    if (selectedEnterprise === 'all') return taxDeclarations
+    return taxDeclarations.filter(d =>
+      d.enterpriseSummary.some(e => e.name === selectedEnterprise)
+    )
+  }, [taxDeclarations, selectedEnterprise])
+
+  const enterpriseDeclarationRecords = useMemo(() => {
+    if (selectedEnterprise === 'all') return taxRecords.filter(r => r.status === 'declared' || r.status === 'paid')
+    return taxRecords.filter(r => r.enterpriseName === selectedEnterprise && (r.status === 'declared' || r.status === 'paid'))
+  }, [taxRecords, selectedEnterprise])
+
   const tabs: PeriodTab[] = ['月度', '季度', '年度']
 
   return (
@@ -106,17 +121,31 @@ export default function TaxLedger() {
         </div>
       )}
 
-      <div className="flex items-center gap-1 p-1 rounded-md bg-[var(--bg-card)] w-fit">
-        {tabs.map(t => (
-          <button key={t} onClick={() => setPeriod(t)} className={cn('px-4 py-1.5 rounded text-xs font-medium transition-colors', period === t ? 'bg-accent-green-dim text-accent-green' : 'text-txt-secondary hover:text-text-primary')}>
-            {t}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-1 p-1 rounded-md bg-[var(--bg-card)] w-fit">
+          {tabs.map(t => (
+            <button key={t} onClick={() => setPeriod(t)} className={cn('px-4 py-1.5 rounded text-xs font-medium transition-colors', period === t ? 'bg-accent-green-dim text-accent-green' : 'text-txt-secondary hover:text-text-primary')}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <select
+          value={selectedEnterprise}
+          onChange={e => setSelectedEnterprise(e.target.value)}
+          className="px-3 py-1.5 rounded text-xs bg-[var(--bg-card)] border border-[var(--border)] text-text-primary focus:outline-none focus:border-accent-green"
+        >
+          <option value="all">全部企业</option>
+          {enterpriseNames.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {mockLedger.map(enterprise => (
+          {mockLedger
+            .filter(ent => selectedEnterprise === 'all' || ent.name === selectedEnterprise)
+            .map(enterprise => (
             <div key={enterprise.name} className="glass-card p-4">
               <div className="flex items-center gap-2 mb-3 border-l-[3px] border-accent-green pl-3">
                 <span className="text-sm font-semibold text-text-primary">{enterprise.name}</span>
@@ -194,13 +223,34 @@ export default function TaxLedger() {
             >
               生成申报表
             </button>
-            {calculatedCount > 0 && (
-              <button
-                onClick={handleGenerate}
-                className="w-full mt-2 py-2 rounded text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
-              >
-                确认申报 ({calculatedCount}条)
-              </button>
+          </div>
+
+          <div className="glass-card p-4">
+            <div className="flex items-center gap-2 mb-3 border-l-[3px] border-accent-green pl-3">
+              <span className="text-sm font-semibold text-text-primary">申报依据</span>
+              <span className="text-[10px] text-txt-muted">({selectedEnterprise === 'all' ? '全部企业' : selectedEnterprise})</span>
+            </div>
+            {enterpriseDeclarationRecords.length > 0 ? (
+              <div className="space-y-2">
+                {enterpriseDeclarationRecords.map(r => (
+                  <div key={r.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-[var(--bg-secondary)] text-xs">
+                    <div className="min-w-0">
+                      <span className="text-text-primary">{r.pollutantType}</span>
+                      <span className="text-txt-muted ml-2">{r.period}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="stat-value text-accent-green">{r.taxAmount.toLocaleString()}元</span>
+                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded',
+                        r.status === 'paid' ? 'bg-accent-blue-dim text-accent-blue' : 'bg-accent-green-dim text-accent-green'
+                      )}>
+                        {r.status === 'paid' ? '已缴纳' : '已申报'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-txt-muted py-3 text-center">暂无申报记录</p>
             )}
           </div>
         </div>

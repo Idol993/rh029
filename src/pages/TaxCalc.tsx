@@ -4,15 +4,17 @@ import StatCard from '@/components/StatCard'
 import StatusBadge from '@/components/StatusBadge'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
-import { Calculator, Building2, CheckCircle, FileText } from 'lucide-react'
+import { Calculator, Building2, CheckCircle, FileText, Eye, X } from 'lucide-react'
+import type { TaxDeclaration } from '@/types'
 
 const axisColor = '#8896ab'
 const splitColor = '#2a3548'
 
 export default function TaxCalc() {
-  const { taxRecords, enterprises, declareTax } = useStore()
+  const { taxRecords, taxDeclarations, enterprises, generateDeclaration, confirmDeclaration } = useStore()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
+  const [previewDecl, setPreviewDecl] = useState<TaxDeclaration | null>(null)
 
   useEffect(() => {
     if (!toast) return
@@ -38,16 +40,27 @@ export default function TaxCalc() {
     })
   }, [taxRecords])
 
-  const handleDeclare = useCallback(() => {
+  const handleGeneratePreview = useCallback(() => {
     if (selectedIds.size === 0) return
-    declareTax(Array.from(selectedIds))
-    setToast(`已确认申报${selectedIds.size}条记录`)
+    const ids = Array.from(selectedIds)
+    const declId = generateDeclaration(ids)
+    const decl = useStore.getState().taxDeclarations.find(d => d.id === declId)
+    if (decl) {
+      setPreviewDecl(decl)
+    }
+  }, [selectedIds, generateDeclaration])
+
+  const handleConfirmDeclaration = useCallback(() => {
+    if (!previewDecl) return
+    confirmDeclaration(previewDecl.id)
+    setToast(`已确认申报${previewDecl.records.length}条记录，税额合计${previewDecl.totalTax.toLocaleString()}元`)
+    setPreviewDecl(null)
     setSelectedIds(new Set())
-  }, [selectedIds, declareTax])
+  }, [previewDecl, confirmDeclaration])
 
   const totalTax = useMemo(() => taxRecords.reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
   const paidTotal = useMemo(() => taxRecords.filter(r => r.status === 'paid').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
-  const declaredCount = useMemo(() => new Set(taxRecords.map(r => r.enterpriseName)).size, [taxRecords])
+  const declaredCount = useMemo(() => new Set(taxRecords.filter(r => r.status === 'declared' || r.status === 'paid').map(r => r.enterpriseName)).size, [taxRecords])
   const pendingTotal = useMemo(() => taxRecords.filter(r => r.status === 'calculated').reduce((s, r) => s + r.taxAmount, 0), [taxRecords])
 
   const barOption = useMemo(() => {
@@ -76,11 +89,107 @@ export default function TaxCalc() {
 
   const calculatedRecords = useMemo(() => taxRecords.filter(r => r.status === 'calculated'), [taxRecords])
 
+  const previewRecords = useMemo(() => {
+    if (!previewDecl) return []
+    return taxRecords.filter(r => previewDecl.records.includes(r.id))
+  }, [previewDecl, taxRecords])
+
   return (
     <div className="space-y-5">
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-lg bg-accent-green-dim text-accent-green text-sm font-medium shadow-lg animate-fade-in">
           {toast}
+        </div>
+      )}
+
+      {previewDecl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto glass-card p-6 mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-text-primary">申报预览</h3>
+              <button onClick={() => setPreviewDecl(null)} className="text-txt-muted hover:text-text-primary"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="px-3 py-2 rounded bg-accent-green-dim">
+                  <span className="text-[10px] text-txt-muted block">申报税额合计</span>
+                  <span className="stat-value text-sm text-accent-green">{previewDecl.totalTax.toLocaleString()}元</span>
+                </div>
+                <div className="px-3 py-2 rounded bg-accent-cyan-dim">
+                  <span className="text-[10px] text-txt-muted block">申报企业数</span>
+                  <span className="stat-value text-sm text-accent-cyan">{previewDecl.enterpriseSummary.length}家</span>
+                </div>
+                <div className="px-3 py-2 rounded bg-accent-blue-dim">
+                  <span className="text-[10px] text-txt-muted block">申报记录数</span>
+                  <span className="stat-value text-sm text-accent-blue">{previewDecl.records.length}条</span>
+                </div>
+                <div className="px-3 py-2 rounded bg-accent-orange-dim">
+                  <span className="text-[10px] text-txt-muted block">申报期间</span>
+                  <span className="stat-value text-sm text-accent-orange">{previewDecl.period}</span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-medium text-text-primary mb-2">企业明细</h4>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 px-2 text-txt-secondary font-medium">企业名称</th>
+                      <th className="text-right py-2 px-2 text-txt-secondary font-medium">污染物项数</th>
+                      <th className="text-right py-2 px-2 text-txt-secondary font-medium">应纳税额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewDecl.enterpriseSummary.map(e => (
+                      <tr key={e.name} className="border-b border-[var(--border)]/50">
+                        <td className="py-2 px-2 text-text-primary">{e.name}</td>
+                        <td className="py-2 px-2 text-right text-txt-secondary">{e.pollutantCount}项</td>
+                        <td className="py-2 px-2 text-right stat-value text-accent-green">{e.totalTax.toLocaleString()}元</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-medium text-text-primary mb-2">污染物明细</h4>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 px-2 text-txt-secondary font-medium">企业</th>
+                      <th className="text-left py-2 px-2 text-txt-secondary font-medium">污染物</th>
+                      <th className="text-right py-2 px-2 text-txt-secondary font-medium">排放量(kg)</th>
+                      <th className="text-right py-2 px-2 text-txt-secondary font-medium">当量值</th>
+                      <th className="text-right py-2 px-2 text-txt-secondary font-medium">税额(元)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRecords.map(r => (
+                      <tr key={r.id} className="border-b border-[var(--border)]/50">
+                        <td className="py-2 px-2 text-text-primary">{r.enterpriseName}</td>
+                        <td className="py-2 px-2 text-text-primary">{r.pollutantType}</td>
+                        <td className="py-2 px-2 text-right stat-value text-text-primary">{r.emission.toLocaleString()}</td>
+                        <td className="py-2 px-2 text-right text-txt-secondary">{r.equivalentValue}</td>
+                        <td className="py-2 px-2 text-right stat-value text-accent-green">{r.taxAmount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
+                <button
+                  onClick={() => setPreviewDecl(null)}
+                  className="px-4 py-2 rounded text-xs font-medium bg-[var(--bg-secondary)] border border-[var(--border)] text-txt-secondary hover:text-text-primary transition-colors"
+                >取消</button>
+                <button
+                  onClick={handleConfirmDeclaration}
+                  className="px-4 py-2 rounded text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
+                >确认申报</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -152,12 +261,20 @@ export default function TaxCalc() {
           {selectedIds.size > 0 && (
             <div className="mt-3 flex items-center justify-between px-3 py-2.5 rounded-lg bg-accent-green/5 border border-accent-green/20">
               <span className="text-xs text-txt-secondary">已选择 <span className="stat-value text-accent-green">{selectedIds.size}</span> 条已核算记录</span>
-              <button
-                onClick={handleDeclare}
-                className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
-              >
-                确认申报 ({selectedIds.size}条)
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleGeneratePreview}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1"
+                >
+                  <Eye className="w-3.5 h-3.5" />生成申报表
+                </button>
+                <button
+                  onClick={handleGeneratePreview}
+                  className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
+                >
+                  确认申报 ({selectedIds.size}条)
+                </button>
+              </div>
             </div>
           )}
         </div>

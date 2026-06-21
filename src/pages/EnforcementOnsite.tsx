@@ -1,22 +1,17 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '@/store'
 import StatusBadge from '@/components/StatusBadge'
+import type { EvidenceFile } from '@/types'
 import { cn } from '@/lib/utils'
-import { Upload, FileText, Camera, Video, X, Save, Send, AlertTriangle, Gavel } from 'lucide-react'
-
-interface UploadFile {
-  id: string
-  name: string
-  type: 'photo' | 'video'
-  size: string
-}
+import { Upload, FileText, Camera, Video, X, Save, Send, AlertTriangle, Gavel, Plus } from 'lucide-react'
 
 export default function EnforcementOnsite() {
   const navigate = useNavigate()
-  const { enforcementTasks, completeEnforcement, createRectifyFromEnforcement } = useStore()
-  const taskId = new URLSearchParams(window.location.search).get('task')
-  const task = enforcementTasks.find(t => t.id === taskId) || enforcementTasks.find(t => t.status === 'in_progress') || enforcementTasks[0]
+  const [searchParams] = useSearchParams()
+  const { enforcementTasks, completeEnforcement, createRectifyFromEnforcement, addEnforcementEvidence, removeEnforcementEvidence } = useStore()
+  const taskId = searchParams.get('task')
+  const task = enforcementTasks.find(t => t.id === taskId)
 
   const [toast, setToast] = useState('')
 
@@ -34,38 +29,47 @@ export default function EnforcementOnsite() {
     opinion: '',
   })
 
-  const [files, setFiles] = useState<UploadFile[]>([
-    { id: 'f1', name: '排口采样照片_001.jpg', type: 'photo', size: '2.4MB' },
-    { id: 'f2', name: '设施运行状态_002.jpg', type: 'photo', size: '1.8MB' },
-  ])
-
   const [uploadSlots] = useState([
-    { id: 's1', label: '现场全景', icon: Camera },
-    { id: 's2', label: '排口采样', icon: Camera },
-    { id: 's3', label: '设施状态', icon: Camera },
-    { id: 's4', label: '现场录像', icon: Video },
+    { id: 's1', label: '现场全景', type: 'photo' as const, icon: Camera },
+    { id: 's2', label: '排口采样', type: 'photo' as const, icon: Camera },
+    { id: 's3', label: '设施状态', type: 'photo' as const, icon: Camera },
+    { id: 's4', label: '现场录像', type: 'video' as const, icon: Video },
   ])
 
   const updateField = (field: keyof typeof form, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const removeFile = (id: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id))
+  const handleUpload = (slot: typeof uploadSlots[0]) => {
+    if (!task) return
+    const file: EvidenceFile = {
+      id: `ev${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: `${slot.label}_${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }).replace(':', '')}.${slot.type === 'photo' ? 'jpg' : 'mp4'}`,
+      type: slot.type,
+      size: slot.type === 'photo' ? `${(1 + Math.random() * 3).toFixed(1)}MB` : `${(5 + Math.random() * 15).toFixed(1)}MB`,
+      uploadedAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    }
+    addEnforcementEvidence(task.id, file)
+    showToast(`已上传${slot.label}`)
+  }
+
+  const handleRemoveFile = (fileId: string) => {
+    if (!task) return
+    removeEnforcementEvidence(task.id, fileId)
   }
 
   const handleSubmitRecord = () => {
     if (!task) return
     completeEnforcement(task.id)
-    showToast('笔录已提交')
+    showToast('笔录已提交，任务已完成')
     setTimeout(() => navigate('/enforcement'), 800)
   }
 
   const handleIssueRectify = () => {
     if (!task) return
-    createRectifyFromEnforcement(task.id)
+    const rid = createRectifyFromEnforcement(task.id)
     completeEnforcement(task.id)
-    showToast('整改已下达，任务已完成')
+    showToast(`整改已下达(编号${rid})，任务已完成`)
     setTimeout(() => navigate('/enforcement/rectify'), 800)
   }
 
@@ -73,10 +77,19 @@ export default function EnforcementOnsite() {
     if (!task) return
     completeEnforcement(task.id)
     showToast('已立案处罚')
+    setTimeout(() => navigate('/enforcement'), 800)
   }
 
   const handleSaveDraft = () => {
-    showToast('已保存')
+    showToast('已保存草稿')
+  }
+
+  if (!task) {
+    return (
+      <div className="flex items-center justify-center h-96 text-txt-muted">
+        未找到执法任务，请从执法管理进入
+      </div>
+    )
   }
 
   return (
@@ -92,28 +105,26 @@ export default function EnforcementOnsite() {
           <div className="flex items-center gap-2 border-l-[3px] border-accent-green pl-3">
             <span className="text-sm font-semibold text-text-primary">任务信息</span>
           </div>
-          {task && <StatusBadge variant={task.status} pulse={task.status === 'in_progress'} />}
+          <StatusBadge variant={task.status} pulse={task.status === 'in_progress'} />
         </div>
-        {task && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-            <div>
-              <span className="text-txt-muted block mb-0.5">任务类型</span>
-              <span className="text-text-primary font-medium">{task.typeName}</span>
-            </div>
-            <div>
-              <span className="text-txt-muted block mb-0.5">被检查企业</span>
-              <span className="text-text-primary font-medium">{task.enterpriseName}</span>
-            </div>
-            <div>
-              <span className="text-txt-muted block mb-0.5">排口编号</span>
-              <span className="text-text-primary font-mono">{task.outletCode}</span>
-            </div>
-            <div>
-              <span className="text-txt-muted block mb-0.5">执法人</span>
-              <span className="text-text-primary font-medium">{task.enforcerName}</span>
-            </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+          <div>
+            <span className="text-txt-muted block mb-0.5">任务编号</span>
+            <span className="text-text-primary font-mono">{task.id}</span>
           </div>
-        )}
+          <div>
+            <span className="text-txt-muted block mb-0.5">任务类型</span>
+            <span className="text-text-primary font-medium">{task.typeName}</span>
+          </div>
+          <div>
+            <span className="text-txt-muted block mb-0.5">被检查企业</span>
+            <span className="text-text-primary font-medium">{task.enterpriseName}</span>
+          </div>
+          <div>
+            <span className="text-txt-muted block mb-0.5">排口编号</span>
+            <span className="text-text-primary font-mono">{task.outletCode}</span>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -166,15 +177,23 @@ export default function EnforcementOnsite() {
           </div>
           <div className="grid grid-cols-2 gap-3 mb-4">
             {uploadSlots.map(slot => (
-              <button key={slot.id} className="flex flex-col items-center justify-center gap-2 p-4 rounded border border-dashed border-[var(--border-light)] hover:border-accent-green hover:bg-accent-green-dim/30 transition-colors">
+              <button
+                key={slot.id}
+                onClick={() => handleUpload(slot)}
+                className="flex flex-col items-center justify-center gap-2 p-4 rounded border border-dashed border-[var(--border-light)] hover:border-accent-green hover:bg-accent-green-dim/30 transition-colors"
+              >
                 <slot.icon className="w-5 h-5 text-txt-muted" />
                 <span className="text-[10px] text-txt-secondary">{slot.label}</span>
+                <Plus className="w-3 h-3 text-accent-green opacity-60" />
               </button>
             ))}
           </div>
           <div className="space-y-2">
-            <span className="text-[11px] text-txt-secondary">已上传文件</span>
-            {files.map(file => (
+            <span className="text-[11px] text-txt-secondary">已上传文件 ({task.evidenceFiles.length})</span>
+            {task.evidenceFiles.length === 0 && (
+              <p className="text-[11px] text-txt-muted py-2">点击上方按钮上传取证材料</p>
+            )}
+            {task.evidenceFiles.map(file => (
               <div key={file.id} className="flex items-center justify-between py-1.5 px-2 rounded bg-[var(--bg-secondary)] text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   {file.type === 'photo' ? <Camera className="w-3.5 h-3.5 text-accent-cyan shrink-0" /> : <Video className="w-3.5 h-3.5 text-accent-blue shrink-0" />}
@@ -182,7 +201,7 @@ export default function EnforcementOnsite() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-txt-muted text-[10px]">{file.size}</span>
-                  <button onClick={() => removeFile(file.id)} className="text-txt-muted hover:text-accent-red transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => handleRemoveFile(file.id)} className="text-txt-muted hover:text-accent-red transition-colors"><X className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             ))}

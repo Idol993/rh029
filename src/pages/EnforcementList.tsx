@@ -19,7 +19,7 @@ const typeIconMap: Record<string, string> = {
 
 export default function EnforcementList() {
   const navigate = useNavigate()
-  const { enforcementTasks, startEnforcement, completeEnforcement, createRectifyFromEnforcement } = useStore()
+  const { enforcementTasks, warningEvents, startEnforcement, completeEnforcement, createRectifyFromEnforcement } = useStore()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('全部')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [toast, setToast] = useState('')
@@ -30,7 +30,7 @@ export default function EnforcementList() {
   }
 
   const totalCount = enforcementTasks.length
-  const completedCount = enforcementTasks.filter(t => t.status === 'completed').length
+  const completedCount = enforcementTasks.filter(t => t.status === 'completed' || t.status === 'closed').length
   const inProgressCount = enforcementTasks.filter(t => t.status === 'in_progress').length
   const completionRate = totalCount > 0 ? ((completedCount / totalCount) * 100).toFixed(1) : '0'
 
@@ -52,7 +52,10 @@ export default function EnforcementList() {
         return (
           <>
             <button
-              onClick={() => { startEnforcement(task.id); showToast('已开始执行') }}
+              onClick={() => {
+                startEnforcement(task.id)
+                navigate(`/enforcement/onsite?task=${task.id}`)
+              }}
               className="px-3 py-1 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
             >开始执行</button>
             <button className="px-3 py-1 rounded text-[11px] font-medium bg-[var(--bg-secondary)] text-txt-secondary hover:text-text-primary transition-colors">转派</button>
@@ -61,6 +64,10 @@ export default function EnforcementList() {
       case 'in_progress':
         return (
           <>
+            <button
+              onClick={() => navigate(`/enforcement/onsite?task=${task.id}`)}
+              className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors"
+            >继续执行</button>
             <button
               onClick={() => { completeEnforcement(task.id); showToast('已提交结果') }}
               className="px-3 py-1 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
@@ -74,13 +81,30 @@ export default function EnforcementList() {
       case 'completed':
         return (
           <button
-            onClick={() => { if (task.type === 'rectify') navigate('/enforcement/rectify') }}
+            onClick={() => {
+              if (task.type === 'rectify') navigate('/enforcement/rectify')
+            }}
             className="px-3 py-1 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors"
           >查看详情</button>
+        )
+      case 'closed':
+        return (
+          <span className="text-[11px] text-txt-muted">已销号</span>
         )
       default:
         return null
     }
+  }
+
+  const getWarningLink = (task: typeof enforcementTasks[0]) => {
+    if (!task.warningId) return null
+    const w = warningEvents.find(w => w.id === task.warningId)
+    if (!w) return null
+    return (
+      <span className="text-[10px] text-accent-cyan cursor-pointer hover:underline" onClick={() => navigate(`/warning/${w.id}`)}>
+        关联预警: {w.typeName}
+      </span>
+    )
   }
 
   return (
@@ -115,6 +139,7 @@ export default function EnforcementList() {
           <option value="assigned">已派单</option>
           <option value="in_progress">进行中</option>
           <option value="completed">已完成</option>
+          <option value="closed">已销号</option>
         </select>
       </div>
 
@@ -147,6 +172,15 @@ export default function EnforcementList() {
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-txt-secondary">{task.description}</p>
+                {getWarningLink(task) && <div className="mt-1">{getWarningLink(task)}</div>}
+                {task.evidenceFiles.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1">
+                    <span className="text-[10px] text-txt-muted">取证材料:</span>
+                    {task.evidenceFiles.map(f => (
+                      <span key={f.id} className="text-[10px] text-accent-cyan bg-accent-cyan-dim px-1.5 py-0.5 rounded">{f.name}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {getActionButtons(task)}
@@ -158,6 +192,14 @@ export default function EnforcementList() {
                   <div className="h-full rounded-full bg-accent-green w-full transition-all" />
                 </div>
                 <span className="text-[10px] text-txt-muted">完成于 {task.completeTime}</span>
+              </div>
+            )}
+            {task.status === 'closed' && task.completeTime && (
+              <div className="mt-2 pt-2 border-t border-[var(--border)]/50 flex items-center gap-2">
+                <div className="flex-1 h-1.5 rounded-full bg-accent-green-dim overflow-hidden">
+                  <div className="h-full rounded-full bg-accent-green w-full transition-all" />
+                </div>
+                <span className="text-[10px] text-txt-muted">销号于 {task.completeTime}</span>
               </div>
             )}
             {task.status === 'in_progress' && (

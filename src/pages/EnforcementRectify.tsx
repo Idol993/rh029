@@ -3,7 +3,7 @@ import { useStore } from '@/store'
 import StatCard from '@/components/StatCard'
 import ReactECharts from 'echarts-for-react'
 import { cn } from '@/lib/utils'
-import { ClipboardCheck, Wrench, CheckCircle2, Percent, Upload, CheckCircle, XCircle } from 'lucide-react'
+import { ClipboardCheck, Wrench, CheckCircle2, Percent, Upload, CheckCircle, XCircle, Camera, Video } from 'lucide-react'
 
 const axisColor = '#8896ab'
 const splitColor = '#2a3548'
@@ -11,8 +11,7 @@ const splitColor = '#2a3548'
 const stepLabels = ['下达整改', '企业反馈', '执法复核', '销号确认']
 
 export default function EnforcementRectify() {
-  const { enforcementTasks, warningEvents, startEnforcement, completeEnforcement } = useStore()
-  const [stepOverrides, setStepOverrides] = useState<Record<string, number>>({})
+  const { enforcementTasks, warningEvents, startEnforcement, completeEnforcement, setRectifyStep, closeRectify } = useStore()
   const [toast, setToast] = useState('')
 
   const showToast = (msg: string) => {
@@ -23,10 +22,8 @@ export default function EnforcementRectify() {
   const rectifyTasks = useMemo(() => enforcementTasks.filter(t => t.type === 'rectify'), [enforcementTasks])
 
   const getCurrentStep = (task: typeof rectifyTasks[0]): number => {
-    if (task.status === 'assigned') return 0
     if (task.status === 'closed') return 4
-    if (task.status === 'completed') return 3
-    return stepOverrides[task.id] ?? 1
+    return task.rectifyStep
   }
 
   const getWarningContext = (warningId: string) => warningEvents.find(w => w.id === warningId)
@@ -35,7 +32,7 @@ export default function EnforcementRectify() {
   const inProgressCount = rectifyTasks.filter(t => t.status === 'in_progress').length
   const closedCount = rectifyTasks.filter(t => t.status === 'closed').length
   const completedCount = rectifyTasks.filter(t => t.status === 'completed').length
-  const closeRate = rectifyTasks.length > 0 ? (((closedCount + completedCount) / rectifyTasks.length) * 100).toFixed(1) : '0'
+  const closeRate = rectifyTasks.length > 0 ? ((closedCount / rectifyTasks.length) * 100).toFixed(1) : '0'
 
   const chartOption = useMemo(() => ({
     backgroundColor: 'transparent',
@@ -58,26 +55,29 @@ export default function EnforcementRectify() {
 
   const handleStartRectify = (taskId: string) => {
     startEnforcement(taskId)
+    setRectifyStep(taskId, 1)
     showToast('已开始整改')
   }
 
   const handleSubmitReview = (taskId: string) => {
-    setStepOverrides(prev => ({ ...prev, [taskId]: 2 }))
+    setRectifyStep(taskId, 2)
     showToast('已提交复核')
   }
 
   const handleApproveReview = (taskId: string) => {
     completeEnforcement(taskId)
+    setRectifyStep(taskId, 3)
     showToast('复核已通过')
   }
 
   const handleRejectRectify = (taskId: string) => {
-    setStepOverrides(prev => ({ ...prev, [taskId]: 1 }))
+    setRectifyStep(taskId, 1)
     showToast('整改已驳回，请重新整改')
   }
 
   const handleCloseConfirm = (taskId: string) => {
-    showToast('已销号确认')
+    closeRectify(taskId)
+    showToast('已销号确认，整改闭环完成')
   }
 
   return (
@@ -91,7 +91,7 @@ export default function EnforcementRectify() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="待整改" value={pendingCount} icon={<ClipboardCheck className="w-4 h-4 text-accent-orange" />} color="orange" pulse />
         <StatCard label="整改中" value={inProgressCount} icon={<Wrench className="w-4 h-4 text-accent-blue" />} color="blue" />
-        <StatCard label="已完成" value={completedCount + closedCount} icon={<CheckCircle2 className="w-4 h-4 text-accent-green" />} color="green" />
+        <StatCard label="已销号" value={closedCount} icon={<CheckCircle2 className="w-4 h-4 text-accent-green" />} color="green" />
         <StatCard label="销号率" value={closeRate} unit="%" icon={<Percent className="w-4 h-4 text-accent-cyan" />} color="cyan" />
       </div>
 
@@ -101,7 +101,7 @@ export default function EnforcementRectify() {
           const warning = getWarningContext(task.warningId)
           const steps = stepLabels.map((label, i) => ({
             label,
-            done: i < currentStep || task.status === 'closed',
+            done: i < currentStep,
           }))
 
           return (
@@ -113,8 +113,13 @@ export default function EnforcementRectify() {
                     {warning ? `${warning.typeName}：${warning.description}` : task.description}
                   </p>
                 </div>
-                <span className={cn('text-[11px] px-2 py-0.5 rounded font-medium shrink-0', currentStep === 0 ? 'bg-accent-orange-dim text-accent-orange' : task.status === 'closed' ? 'bg-zinc-700/50 text-zinc-400' : currentStep >= 3 ? 'bg-accent-green-dim text-accent-green' : 'bg-accent-blue-dim text-accent-blue')}>
-                  {currentStep === 0 ? '待整改' : task.status === 'closed' ? '已销号' : currentStep >= 3 ? '已完成' : '整改中'}
+                <span className={cn('text-[11px] px-2 py-0.5 rounded font-medium shrink-0',
+                  task.status === 'closed' ? 'bg-accent-green-dim text-accent-green' :
+                  currentStep === 0 ? 'bg-accent-orange-dim text-accent-orange' :
+                  currentStep >= 3 ? 'bg-accent-cyan-dim text-accent-cyan' :
+                  'bg-accent-blue-dim text-accent-blue'
+                )}>
+                  {task.status === 'closed' ? '已销号' : currentStep === 0 ? '待整改' : currentStep >= 3 ? '待销号' : '整改中'}
                 </span>
               </div>
 
@@ -142,15 +147,23 @@ export default function EnforcementRectify() {
                 ))}
               </div>
 
+              {task.evidenceFiles.length > 0 && (
+                <div className="mb-3 pt-3 border-t border-[var(--border)]/30">
+                  <span className="text-[11px] text-txt-muted block mb-1.5">关联取证材料:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {task.evidenceFiles.map(f => (
+                      <span key={f.id} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[var(--bg-secondary)] text-txt-secondary">
+                        {f.type === 'photo' ? <Camera className="w-3 h-3 text-accent-cyan" /> : <Video className="w-3 h-3 text-accent-blue" />}
+                        {f.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {task.status !== 'closed' && (
                 <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]/50">
                   <div className="flex items-center gap-2">
-                    {currentStep === 0 && (
-                      <button
-                        onClick={() => handleStartRectify(task.id)}
-                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
-                      >开始整改</button>
-                    )}
                     {currentStep >= 1 && currentStep < 3 && (
                       <button className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-cyan-dim text-accent-cyan hover:bg-accent-cyan/20 transition-colors flex items-center gap-1">
                         <Upload className="w-3 h-3" />上传整改材料
@@ -158,6 +171,12 @@ export default function EnforcementRectify() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {currentStep === 0 && (
+                      <button
+                        onClick={() => handleStartRectify(task.id)}
+                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-blue-dim text-accent-blue hover:bg-accent-blue/20 transition-colors"
+                      >开始整改</button>
+                    )}
                     {currentStep === 1 && (
                       <button
                         onClick={() => handleSubmitReview(task.id)}
@@ -180,13 +199,19 @@ export default function EnforcementRectify() {
                         </button>
                       </>
                     )}
-                    {currentStep === 3 && (
+                    {currentStep >= 3 && (
                       <button
                         onClick={() => handleCloseConfirm(task.id)}
-                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green-dim text-accent-green hover:bg-accent-green/20 transition-colors"
+                        className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-green text-white hover:bg-accent-green/90 transition-colors"
                       >销号确认</button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {task.status === 'closed' && task.completeTime && (
+                <div className="pt-3 border-t border-[var(--border)]/50 text-[10px] text-txt-muted">
+                  销号时间: {task.completeTime}
                 </div>
               )}
             </div>

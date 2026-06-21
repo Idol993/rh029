@@ -51,6 +51,14 @@ export interface MonitorData {
 
 export type WarningLevel = 'red' | 'orange' | 'yellow'
 
+export interface EvidenceFile {
+  id: string
+  name: string
+  type: 'photo' | 'video'
+  size: string
+  uploadedAt: string
+}
+
 export interface WarningEvent {
   id: string
   outletId: string
@@ -67,6 +75,10 @@ export interface WarningEvent {
   status: 'pending' | 'processing' | 'resolved' | 'closed' | 'dispatched'
   handler?: string
   description: string
+  processTime?: string
+  dispatchTime?: string
+  resolveTime?: string
+  closeTime?: string
 }
 
 export interface EnforcementTask {
@@ -81,6 +93,8 @@ export interface EnforcementTask {
   assignTime: string
   completeTime?: string
   description: string
+  evidenceFiles: EvidenceFile[]
+  rectifyStep: number
 }
 
 export interface TaxRecord {
@@ -94,6 +108,19 @@ export interface TaxRecord {
   unitPrice: number
   taxAmount: number
   status: 'calculated' | 'declared' | 'paid'
+  declaredAt?: string
+  declarationId?: string
+}
+
+export interface TaxDeclaration {
+  id: string
+  period: string
+  createdAt: string
+  confirmedAt?: string
+  status: 'preview' | 'confirmed'
+  records: string[]
+  enterpriseSummary: { name: string; totalTax: number; pollutantCount: number }[]
+  totalTax: number
 }
 
 export interface MaintenanceOrder {

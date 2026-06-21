@@ -18,6 +18,7 @@ const statusOptions = [
   { key: 'all', label: '全部状态' },
   { key: 'pending', label: '待处置' },
   { key: 'processing', label: '处置中' },
+  { key: 'dispatched', label: '已派单' },
   { key: 'resolved', label: '已解决' },
   { key: 'closed', label: '已关闭' },
 ] as const
@@ -28,7 +29,24 @@ const levelBorder: Record<WarningLevel, string> = {
   yellow: 'border-l-accent-yellow',
 }
 
+function getLastTime(event: WarningEvent): string {
+  if (event.closeTime) return event.closeTime
+  if (event.resolveTime) return event.resolveTime
+  if (event.dispatchTime) return event.dispatchTime
+  if (event.processTime) return event.processTime
+  return event.triggerTime
+}
+
+const statusLabel: Record<string, string> = {
+  pending: '待处置',
+  processing: '处置中',
+  dispatched: '已派单',
+  resolved: '已解决',
+  closed: '已关闭',
+}
+
 function WarningCard({ event, onClick }: { event: WarningEvent; onClick: () => void }) {
+  const lastTime = getLastTime(event)
   return (
     <div className={cn('glass-card p-4 border-l-4', levelBorder[event.level])}>
       <div className="flex items-start justify-between gap-3">
@@ -54,8 +72,9 @@ function WarningCard({ event, onClick }: { event: WarningEvent; onClick: () => v
             </div>
           )}
           <div className="flex items-center gap-4 text-xs text-txt-muted">
-            <span>触发时间: {event.triggerTime}</span>
-            {event.handler && <span>处置人: {event.handler}</span>}
+            <span>触发: {event.triggerTime}</span>
+            {event.handler && <span>处置人: <span className="text-text-primary">{event.handler}</span></span>}
+            {lastTime !== event.triggerTime && <span>最近流转: <span className="text-text-primary">{lastTime}</span></span>}
           </div>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">

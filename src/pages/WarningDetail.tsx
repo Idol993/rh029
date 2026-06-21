@@ -4,7 +4,7 @@ import { useStore } from '@/store'
 import { cn } from '@/lib/utils'
 import StatusBadge from '@/components/StatusBadge'
 import ReactECharts from 'echarts-for-react'
-import { ArrowLeft, ExternalLink, Video, FileText, Activity } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Video, FileText, Activity, Camera } from 'lucide-react'
 import type { WarningEvent } from '@/types'
 
 const axisLabelColor = '#8896ab'
@@ -22,18 +22,31 @@ function buildTimeline(event: WarningEvent): TimelineStep[] {
     { label: '触发', time: event.triggerTime, person: '系统自动', done: true },
     { label: '推送', time: event.triggerTime, person: '系统自动', done: true },
   ]
-  if (event.status === 'pending') {
-    steps.push({ label: '处置', time: '', person: '', done: false })
-    steps.push({ label: '销号', time: '', person: '', done: false })
-  } else if (event.status === 'processing') {
-    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '', done: true })
-    steps.push({ label: '销号', time: '', person: '', done: false })
-  } else if (event.status === 'dispatched') {
-    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '', done: true })
-    steps.push({ label: '销号', time: '', person: '', done: false })
+  if (event.processTime) {
+    steps.push({ label: '处置', time: event.processTime, person: event.handler || '', done: true })
   } else {
-    steps.push({ label: '处置', time: event.triggerTime, person: event.handler || '—', done: true })
-    steps.push({ label: '销号', time: event.triggerTime, person: event.handler || '—', done: true })
+    steps.push({ label: '处置', time: '', person: '', done: false })
+  }
+  if (event.dispatchTime) {
+    steps.push({ label: '派单', time: event.dispatchTime, person: event.handler || '', done: true })
+  } else if (event.processTime) {
+    steps.push({ label: '派单', time: '', person: '', done: false })
+  } else {
+    steps.push({ label: '派单', time: '', person: '', done: false })
+  }
+  if (event.resolveTime) {
+    steps.push({ label: '解决', time: event.resolveTime, person: event.handler || '', done: true })
+  } else if (event.processTime) {
+    steps.push({ label: '解决', time: '', person: '', done: false })
+  } else {
+    steps.push({ label: '解决', time: '', person: '', done: false })
+  }
+  if (event.closeTime) {
+    steps.push({ label: '关闭', time: event.closeTime, person: event.handler || '', done: true })
+  } else if (event.resolveTime) {
+    steps.push({ label: '关闭', time: '', person: '', done: false })
+  } else {
+    steps.push({ label: '关闭', time: '', person: '', done: false })
   }
   return steps
 }
@@ -115,6 +128,14 @@ export default function WarningDetail() {
     }
   }
 
+  const getLastTransitionTime = () => {
+    if (event.closeTime) return event.closeTime
+    if (event.resolveTime) return event.resolveTime
+    if (event.dispatchTime) return event.dispatchTime
+    if (event.processTime) return event.processTime
+    return event.triggerTime
+  }
+
   return (
     <div className="space-y-5">
       <button
@@ -134,7 +155,10 @@ export default function WarningDetail() {
             </div>
             <h2 className="text-lg font-semibold text-text-primary">{event.enterpriseName}</h2>
           </div>
-          <span className="text-xs text-txt-muted">{event.outletCode}</span>
+          <div className="text-right">
+            <span className="text-xs text-txt-muted">{event.outletCode}</span>
+            <p className="text-[10px] text-txt-muted mt-1">最近流转: {getLastTransitionTime()}</p>
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div><span className="text-txt-muted text-xs block mb-1">预警类型</span><span className="text-text-primary">{event.typeName}</span></div>
@@ -276,14 +300,24 @@ export default function WarningDetail() {
         <h3 className="text-sm font-semibold text-text-primary mb-4 border-l-[3px] border-accent-green pl-3">证据链</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {relatedTasks.length > 0 ? relatedTasks.map((task) => (
-            <div key={task.id} className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
-              <FileText className="w-5 h-5 text-accent-blue shrink-0" />
-              <div className="min-w-0">
+            <div key={task.id} className="flex items-start gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
+              <FileText className="w-5 h-5 text-accent-blue shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
                 <p className="text-xs text-text-primary font-medium truncate">执法任务 {task.id}</p>
                 <p className="text-xs text-txt-muted truncate">{task.typeName} - {task.enforcerName}</p>
-                <p className="text-xs text-txt-muted truncate">{task.status === 'assigned' ? '已指派' : task.status === 'in_progress' ? '进行中' : task.status === 'completed' ? '已完成' : '已关闭'}</p>
+                <p className="text-xs text-txt-muted truncate">{task.status === 'assigned' ? '已指派' : task.status === 'in_progress' ? '进行中' : task.status === 'completed' ? '已完成' : '已销号'}</p>
+                {task.evidenceFiles.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {task.evidenceFiles.map(f => (
+                      <span key={f.id} className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] text-accent-cyan">
+                        {f.type === 'photo' ? <Camera className="w-2.5 h-2.5" /> : <Video className="w-2.5 h-2.5" />}
+                        {f.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 ml-auto" />
+              <ExternalLink className="w-3.5 h-3.5 text-txt-muted shrink-0 mt-0.5 cursor-pointer hover:text-accent-cyan" onClick={() => navigate(`/enforcement/onsite?task=${task.id}`)} />
             </div>
           )) : (
             <div className="flex items-center gap-3 p-3 rounded-md bg-[#111827] border border-[#2a3548]">
